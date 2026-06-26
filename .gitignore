@@ -1,0 +1,6 @@
+node_modules
+storage
+log.log
+nohup.out
+venv/
+.idea

@@ -1,0 +1,41 @@
+{
+  "name": "whatsapp-control-system",
+  "version": "1.0.0",
+  "description": "WhatsApp group control system backend",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon --watch src app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@cacheable/node-cache": "^1.5.4",
+    "@hapi/boom": "^10.0.1",
+    "@koa/multer": "^3.1.0",
+    "baileys": "^6.7.18",
+    "dotenv": "^16.3.1",
+    "joi": "^17.10.1",
+    "koa": "^2.14.2",
+    "koa-bodyparser": "^4.4.1",
+    "koa-router": "^12.0.0",
+    "koa-static": "^5.0.0",
+    "koa2-swagger-ui": "^5.9.1",
+    "mysql2": "^3.6.0",
+    "nats": "^2.19.0",
+    "pino": "^8.15.0",
+    "pino-pretty": "^10.2.0",
+    "qrcode-terminal": "^0.12.0",
+    "sequelize": "^6.32.1",
+    "socks-proxy-agent": "^8.0.5",
+    "swagger-jsdoc": "^6.2.8",
+    "uuid": "^11.1.0",
+    "wscat": "^6.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "sequelize-cli": "^6.6.1"
+  },
+  "engines": {
+    "node": ">=17.0.0"
+  }
+}

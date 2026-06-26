@@ -1,0 +1,778 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+      "title": "whatsapp",
+      "description": "",
+      "version": "1.0.0"
+    },
+    "tags": [
+      {
+        "name": "accounts"
+      },
+      {
+        "name": "message"
+      },
+      {
+        "name": "groups"
+      }
+    ],
+    "paths": {
+      "/api/accounts/loginByQrCode": {
+        "post": {
+          "summary": "二维码登录",
+          "deprecated": false,
+          "description": "proxy 代理ip地址\ncallbackurl 登录成功的回调网址",
+          "tags": [
+            "accounts"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "proxy": {
+                      "type": "string"
+                    },
+                    "callbackurl": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "proxy",
+                    "callbackurl"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "accounts",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-280669486-run"
+        }
+      },
+      "/api/accounts": {
+        "post": {
+          "summary": "获取所有whatsapp账号",
+          "deprecated": false,
+          "description": "proxy 代理ip地址\ncallbackurl 登录成功的回调网址",
+          "tags": [
+            "accounts"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "x-apifox-orders": [],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "accounts",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-280737784-run"
+        }
+      },
+      "/api/accounts/delete": {
+        "post": {
+          "summary": "删除账号",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "accounts"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "id"
+                  ],
+                  "required": [
+                    "id"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "accounts",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-280784657-run"
+        }
+      },
+      "/api/accounts/online": {
+        "post": {
+          "summary": "上线账号",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "accounts"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "id"
+                  ],
+                  "required": [
+                    "id"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "accounts",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-281135800-run"
+        }
+      },
+      "/api/accounts/loginByPhone": {
+        "post": {
+          "summary": "手机号登录",
+          "deprecated": false,
+          "description": "通过手机号和可选代理登录 WhatsApp，返回配对码。\n\n参数说明：\n- phoneNumber: 手机号，支持多种格式，建议 E.164 格式（不带加号）\n- proxy: 可选，SOCKS5 代理地址\n- sessionId: 可选，会话ID\n- callbackUrl: 可选，登录成功回调地址",
+          "tags": [
+            "accounts"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phoneNumber": {
+                      "type": "string",
+                      "description": "手机号，支持多种格式"
+                    },
+                    
+                    "proxy": {
+                      "type": "string",
+                      "description": "SOCKS5 代理地址，可选"
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "description": "会话ID，可选"
+                    },
+                    "callbackUrl": {
+                      "type": "string",
+                      "description": "登录成功回调地址，可选"
+                    }
+                  },
+                  "required": ["phoneNumber"],
+                  "x-apifox-orders": [
+                    "phoneNumber",
+                    "proxy",
+                    "sessionId",
+                    "callbackUrl"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "success": { "type": "boolean" },
+                      "accountId": { "type": "string" },
+                      "phoneNumber": { "type": "string" },
+                      "pairingCode": { "type": "string", "description": "配对码" },
+                      "message": { "type": "string" },
+                      "instructions": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "操作步骤"
+                      }
+                    },
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": [
+                      "success",
+                      "accountId",
+                      "phoneNumber",
+                      "pairingCode",
+                      "message",
+                      "instructions"
+                    ]
+                  },
+                  "examples": {
+                    "手机号登录成功": {
+                      "value": {
+                        "success": true,
+                        "accountId": "1234567890",
+                        "phoneNumber": "8613800138000",
+                        "pairingCode": "123-456",
+                        "message": "配对码已生成，请在您的 WhatsApp 应用中输入此代码",
+                        "instructions": [
+                          "1. 打开您手机上的 WhatsApp 应用",
+                          "2. 进入设置 > 已连接的设备",
+                          "3. 点击\"连接设备\"",
+                          "4. 选择\"使用手机号码连接\"",
+                          "5. 输入配对码: 123-456",
+                          "6. 等待连接完成"
+                        ]
+                      }
+                    },
+                    "手机号格式错误": {
+                      "value": {
+                        "success": false,
+                        "message": "手机号码格式无效: 手机号码不能为空",
+                        "error": "LOGIN_FAILED"
+                      }
+                    }
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "accounts",
+          "x-apifox-status": "developing"
+        }
+      },
+      "/api/messages": {
+        "post": {
+          "summary": "发送消息",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "message"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "pic"
+                      ],
+                      "x-apifox-enum": [
+                        {
+                          "value": "text",
+                          "name": "",
+                          "description": ""
+                        },
+                        {
+                          "value": "pic",
+                          "name": "",
+                          "description": ""
+                        }
+                      ],
+                      "default": "text"
+                    },
+                    "accountId": {
+                      "type": "string",
+                      "description": "账号id或者手机号"
+                    },
+                    "content": {
+                      "type": "string",
+                      "description": "内容"
+                    },
+                    "to": {
+                      "type": "string",
+                      "description": "接受者手机"
+                    },
+                    "base64mediadata": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "type",
+                    "accountId",
+                    "content",
+                    "to",
+                    "base64mediadata"
+                  ],
+                  "required": [
+                    "type",
+                    "accountId",
+                    "to"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "message",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-281285701-run"
+        }
+      },
+      "/api/groups": {
+        "post": {
+          "summary": "创建群",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "groups"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    },
+                    "accountId": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "title",
+                    "accountId"
+                  ],
+                  "required": [
+                    "title",
+                    "accountId"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "groups",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-282150352-run"
+        }
+      },
+      "/api/groups/leaveGroup": {
+        "post": {
+          "summary": "退出群",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "groups"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "groupId": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "accountId",
+                    "groupId"
+                  ],
+                  "required": [
+                    "accountId",
+                    "groupId"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "groups",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-282284323-run"
+        }
+      },
+      "/api/groups/getInviteCode": {
+        "post": {
+          "summary": "获取群邀请链接",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "groups"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "groupId": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "accountId",
+                    "groupId"
+                  ],
+                  "required": [
+                    "accountId",
+                    "groupId"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "groups",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-282285247-run"
+        }
+      },
+      "/api/groups/joinGroup": {
+        "post": {
+          "summary": "加入群",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "groups"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "邀请链接"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "accountId",
+                    "code"
+                  ],
+                  "required": [
+                    "accountId",
+                    "code"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "groups",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-282285582-run"
+        }
+      },
+      "/api/groups/groupInfo": {
+        "post": {
+          "summary": "群信息",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "groups"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "groupId": {
+                      "type": "string",
+                      "description": "邀请链接"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "accountId",
+                    "groupId"
+                  ],
+                  "required": [
+                    "accountId",
+                    "groupId"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "groups",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-282286146-run"
+        }
+      },
+      "/api/groups/groupAllInfo": {
+        "post": {
+          "summary": "我的所有群信息",
+          "deprecated": false,
+          "description": "",
+          "tags": [
+            "groups"
+          ],
+          "parameters": [],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    }
+                  },
+                  "x-apifox-orders": [
+                    "accountId"
+                  ],
+                  "required": [
+                    "accountId"
+                  ],
+                  "x-apifox-ignore-properties": []
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {},
+                    "x-apifox-ignore-properties": [],
+                    "x-apifox-orders": []
+                  }
+                }
+              },
+              "headers": {},
+              "x-apifox-name": "成功"
+            }
+          },
+          "security": [],
+          "x-apifox-folder": "groups",
+          "x-apifox-status": "developing",
+          "x-run-in-apifox": "https://app.apifox.com/web/project/6165383/apis/api-282286944-run"
+        }
+      }
+    },
+    "components": {
+      "schemas": {},
+      "securitySchemes": {}
+    },
+    "servers": [],
+    "security": []
+  }
