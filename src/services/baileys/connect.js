@@ -5,9 +5,7 @@ const path = require('path');
 const logger = require('../../utils/logger');
 
 const nats = require('../../config/nats');
-const Account = require('../../models/Account');
-const Chat = require('../../models/Chat');
-const Contact = require('../../models/Contact');
+const redisStorage = require('../redisStorage');
 const {NodeCache} = require('@cacheable/node-cache');
 const { SocksProxyAgent }=require('socks-proxy-agent');
 const snowflake = require('../../utils/snowflake');
@@ -92,7 +90,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
       for(const chat of chats){
        try{
         console.log('chat:',chat);
-        await Chat.upsert({
+        await redisStorage.upsertChat({
           id:snowflake.nextId(),
           peerPhone:chat.id.split('@')[0],
           peerId:chat.id,
@@ -111,7 +109,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
       for(const contact of contacts){
         try{
           console.log('contact:',contact);
-          await Chat.upsert({
+          await redisStorage.upsertChat({
             id:snowflake.nextId(),
             peerPhone:contact.id.split('@')[0],
             peerId:contact.id,
@@ -148,10 +146,14 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
             const code = await sock.requestPairingCode(account.phoneNumber);
             logger.info(`[Pairing] 配对码生成成功: ${code}`);
             successresolve({status:403,qr:code});
-            await Account.update(
-              { status: 'connecting'},//, account_status: 'connecting' },
-              { where: { id: accountId } }
-            );
+            await redisStorage.upsertAccount({
+              id: accountId,
+              phoneNumber: account.phoneNumber || null,
+              mark: account.mark,
+              proxy: account.proxy,
+              socket_status: 'connecting',
+              account_status: 'connecting'
+            });
           } catch (err) {
             logger.error(`[Pairing] requestPairingCode 异常:`, err);
             rejectresolve && rejectresolve(err);
@@ -163,10 +165,14 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
           try {
             successresolve({status:403,qr:qr});
             logger.info(`QR code generated for account ${accountId}`);
-            await Account.update(
-              { status: 'connecting' },
-              { where: { id: accountId } }
-            );
+            await redisStorage.upsertAccount({
+              id: accountId,
+              phoneNumber: account.phoneNumber || null,
+              mark: account.mark,
+              proxy: account.proxy,
+              socket_status: 'connecting',
+              account_status: 'connecting'
+            });
           } catch (error) {
             logger.error(`Failed to store QR code for account ${accountId}:`, error);
           }
@@ -186,27 +192,36 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
             if(rejectresolve){
               console.log('call rejectresolve');
               sock.account_status="expired";
-              await Account.update(
-                { account_status: 'expired' },
-                { where: { id: accountId } }
-            );
+              await redisStorage.upsertAccount({
+                id: accountId,
+                phoneNumber: account.phoneNumber || null,
+                mark: account.mark,
+                proxy: account.proxy,
+                account_status: 'expired'
+              });
               rejectresolve(new Error('Connection timeout'));
             }
           }
         } else {
           if(lastDisconnect.error?.output?.statusCode==403){
             sock.account_status="banned";
-            await Account.update(
-              { account_status: 'banned' },
-              { where: { id: accountId } }
-            );
+            await redisStorage.upsertAccount({
+              id: accountId,
+              phoneNumber: account.phoneNumber || null,
+              mark: account.mark,
+              proxy: account.proxy,
+              account_status: 'banned'
+            });
             const sessionDir = `./storage/sessions/${accountId}`;
           }else{
             sock.account_status="expired";
-            await Account.update(
-              { account_status: 'expired' },
-              { where: { id: accountId } }
-          );
+            await redisStorage.upsertAccount({
+              id: accountId,
+              phoneNumber: account.phoneNumber || null,
+              mark: account.mark,
+              proxy: account.proxy,
+              account_status: 'expired'
+            });
           }
           const sessionDir = `./storage/sessions/${accountId}`;
           try {
@@ -226,14 +241,15 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
         account.phoneNumber=phoneNumber;
         account.account_status='normal';
         sock.account_status="normal";
-          await Account.update(
-            {
-              lastActive: new Date(),
-              account_status: 'normal',
-              phoneNumber: phoneNumber || ''
-            },
-            { where: { id: accountId } }
-          );
+          await redisStorage.upsertAccount({
+            id: accountId,
+            phoneNumber: phoneNumber || null,
+            mark: account.mark,
+            proxy: account.proxy,
+            socket_status: 'connected',
+            account_status: 'normal',
+            lastActive: new Date().toISOString()
+          });
           console.log('connection open');
           if(successresolve){
             console.log('call successresolve');
@@ -254,7 +270,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
     for (const chat of chats){
       try{
         console.log('chat:',chat);
-        await Chat.upsert({
+        await redisStorage.upsertChat({
           id:snowflake.nextId(),
           peerPhone:chat.id.split('@')[0],
           peerId:chat.id,
@@ -488,6 +504,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
 
             // 发布消息到 NATS
             await nats.publishMessage(`msgs`, messageData);
+            await redisStorage.saveMessage(messageData);
             // logger.info(`${msgType} message published to NATS: ${msg.key.id}`);
 
             // 标记消息为已读（如果不是自己发送的消息）

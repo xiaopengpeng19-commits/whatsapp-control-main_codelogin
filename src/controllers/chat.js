@@ -1,7 +1,5 @@
 const logger = require('../utils/logger');
-const Chat = require('../models/Chat');
-// In-memory storage for development
-const chats = [];
+const redisStorage = require('../services/redisStorage');
 
 class ChatController {
   /**
@@ -9,15 +7,11 @@ class ChatController {
    */
   async getAllChats(ctx) {
     try {
-      const {accountId}=ctx.request.body;
-      const chats=await Chat.findAll({
-        where:{
-          accountId:accountId
-        }
-      });
+      const { accountId } = ctx.request.body;
+      const chats = await redisStorage.getChatsByAccountId(accountId);
       ctx.body = {
         status:200,
-        data:chats
+        data: chats
       };
     } catch (error) {
       logger.error('Error in getAllChats:', error);

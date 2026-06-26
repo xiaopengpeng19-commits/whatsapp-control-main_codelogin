@@ -9,12 +9,7 @@ const serve = require('koa-static');
 const path = require('path');
 
 const logger = require('./src/utils/logger');
-const databaseConfig = require('./src/config/database');
-
 const natsConfig = require('./src/config/nats');
-
-// Import models to ensure they're loaded before database connection
-require('./src/models/index');
 
 const errorHandler = require('./src/middleware/errorHandler');
 const responseFormatter = require('./src/middleware/responseFormatter');
@@ -28,9 +23,7 @@ const chatRoutes = require('./src/routes/chat');
 const app = new Koa();
 const router = new Router();
 
-// Connect to databases
-databaseConfig.connect();
-
+// Connect to NATS
 natsConfig.connectNats().then(nc => {
   if (nc) {
     logger.info('NATS connection established');

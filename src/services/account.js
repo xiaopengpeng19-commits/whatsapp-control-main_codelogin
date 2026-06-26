@@ -1,8 +1,8 @@
 const snowflake = require('../utils/snowflake');
-const { Account}=require('../models');
 const logger = require('../utils/logger');
-const { getConnection,createConnection,GetAccountStateFromConnection,CloseConnection } = require('./baileys/connect');
+const { getConnection, createConnection, GetAccountStateFromConnection, CloseConnection } = require('./baileys/connect');
 const { formatPhoneNumber, isValidPhoneNumber, smartFormatPhoneNumber } = require('../utils/phoneFormatter');
+const redisStorage = require('./redisStorage');
 
 
 class AccountService {
@@ -49,32 +49,20 @@ class AccountService {
       // 创建登录成功后的回调函数
       let callbackfun=null;
       callbackfun=async()=>{
-        // Save or update the account to the database using upsert with unique phoneNumber
         try {
-          const Account = require('../models/Account');
-          
-          const [accountRecord, created] = await Account.upsert({
-            phoneNumber: account.phoneNumber,  // 唯一索引字段，用于判断是否存在
-            id: account.id,
-            mark: account.mark,
-            proxy: account.proxy,
-            socket_status: 'connected',
-            account_status: 'normal',
-            sessionId: sessionId
-          }, {
-            // 指定冲突字段为 phoneNumber
-            conflictFields: ['phoneNumber']
-          });
-          
-          if (created) {
-            console.log('New account created in database:', accountRecord.phoneNumber);
-          } else {
-            console.log('Account updated in database by phoneNumber:', accountRecord.phoneNumber);
-          }
-        } catch (dbError) {
-          console.error('Failed to save/update account to database:', dbError);
-          // Continue execution even if database save fails
-        }
+        await redisStorage.upsertAccount({
+          phoneNumber: account.phoneNumber,
+          id: account.id,
+          mark: account.mark,
+          proxy: account.proxy,
+          socket_status: 'connected',
+          account_status: 'normal',
+          sessionId: sessionId
+        });
+        console.log('Account upserted to Redis:', account.phoneNumber);
+      } catch (dbError) {
+        console.error('Failed to save/update account to Redis:', dbError);
+      }
       }
 
       // 使用配对码方式创建连接
@@ -116,30 +104,32 @@ class AccountService {
    * Get all accounts
    */
   async getAllAccounts() {
-    return await Account.findAll();
+    return await redisStorage.getAllAccounts();
   }
 
   /**
    * Create a new account
    */
   async createAccount(accountDic) {
-    const {proxy}=accountDic;
-    const account = await Account.create({
+    const { proxy } = accountDic;
+    const account = {
       id: snowflake.nextId().toString(),
       mark: '',
       account_status: 'unconnected',
       phoneNumber: null,
       proxy: proxy,
-      socket_status:'disconnected'
-    });
+      socket_status: 'disconnected'
+    };
 
+    await redisStorage.upsertAccount(account);
     return account;
   }
+
   async GetAccoutList(account,data){
-    const accounts=await Account.findAll();
-    let result=[]
+    const accounts = await redisStorage.getAllAccounts();
+    let result=[];
     for (let i = 0; i < accounts.length; i++) {
-      let account=accounts[i]
+      let account = accounts[i];
       const accountState = await this.GetAccountState2(account);
       result.push({
         id: account.id,
@@ -150,15 +140,15 @@ class AccountService {
         createdAt: account.createdAt,
         updatedAt: account.updatedAt,
         accountState: accountState
-      })
+      });
     }
-    //console.log("result:",result);
     return {
       Success:true,
-      "Accounts":result,
+      Accounts:result,
       ErrMsg:"",
     };
   }
+
   /**
    * Get an account by ID
    */
@@ -188,32 +178,19 @@ class AccountService {
     
       
       callbackfun=async()=>{
-        
-        // Save or update the account to the database using upsert with unique phoneNumber
         try {
-          const Account = require('../models/Account');
-          
-          const [accountRecord, created] = await Account.upsert({
-            phoneNumber: account.phoneNumber,  // 唯一索引字段，用于判断是否存在
+          await redisStorage.upsertAccount({
+            phoneNumber: account.phoneNumber,
             id: account.id,
             mark: account.mark,
             proxy: account.proxy,
             socket_status: 'connected',
             account_status: 'normal',
             sessionId: SessionId
-          }, {
-            // 指定冲突字段为 phoneNumber
-            conflictFields: ['phoneNumber']
           });
-          
-          if (created) {
-            console.log('New account created in database:', accountRecord.phoneNumber);
-          } else {
-            console.log('Account updated in database by phoneNumber:', accountRecord.phoneNumber);
-          }
+          console.log('Account upserted to Redis:', account.phoneNumber);
         } catch (dbError) {
-          console.error('Failed to save/update account to database:', dbError);
-          // Continue execution even if database save fails
+          console.error('Failed to save/update account to Redis:', dbError);
         }
       }
     
@@ -297,29 +274,16 @@ class AccountService {
       throw error;
     }
 
-    // Update account status
-    account.socket_status = 'disconnected';
+    const updated = await redisStorage.updateAccount(account.id, {
+      socket_status: 'disconnected'
+    });
 
-
-    return account;
+    return updated;
   }
 
  
   async getAccountByPhoneNumberOrId(phoneNumberOrId) {
-    // First try to find by ID (could be numeric or string ID)
-    //let account = await this.getAccount(phoneNumberOrId);
-
-    // If not found by ID, try to find by phone number
-    
-      const account = await Account.findOne({
-        where: {
-          phoneNumber: phoneNumberOrId
-        },
-        order: [['id', 'DESC']]
-      });
-  
-
-    return account;
+    return await redisStorage.getAccountByPhoneOrId(phoneNumberOrId);
   }
   async GetAccountState(idorphone){
     try{
@@ -384,18 +348,11 @@ class AccountService {
 
   }
   async ContactsList(idorphone,body){
-    
     let connection=await getConnection(idorphone);
     if(!connection){
       return {'Success':false,'Contacts':[],ErrMsg:"账号不存在"}
     }
-    const Contacts=await Chat.findAll({
-      where:{
-        accountPhone:idorphone,
-        isGroup:false
-      }
-    })
-    //console.log('Contacts:',Contacts);
+    const Contacts=await redisStorage.getContactsByAccountId(idorphone);
     return {'Success':true,'Contacts':Contacts,ErrMsg:""}
   }
   
@@ -514,7 +471,6 @@ class AccountService {
        }
 
        const results = [];
-       const Chat = require('../models/Chat');
        const snowflake = require('../utils/snowflake');
 
        // 批量验证手机号
@@ -564,9 +520,9 @@ class AccountService {
              }
            }
 
-           // 保存到数据库
+           // 保存到 Redis
            try {
-             await Chat.upsert({
+             await redisStorage.upsertChat({
                id: snowflake.nextId(),
                peerPhone: phoneNumber,
                peerId: jid,
@@ -578,7 +534,7 @@ class AccountService {
                contactAdded: true
              });
            } catch (dbError) {
-             console.log(`保存联系人 ${phoneNumber} 到数据库失败: ${dbError.message}`);
+             console.log(`保存联系人 ${phoneNumber} 到 Redis 失败: ${dbError.message}`);
            }
 
            results.push({
@@ -666,7 +622,7 @@ class AccountService {
       return {Success:false,ErrMsg:"account not found"};
     }
 
-    await account.destroy();
+    await redisStorage.deleteAccount(account.id);
     return {Success:true,ErrMsg:""};
   }
   async BindProxy(idorphone,data){
@@ -680,8 +636,7 @@ class AccountService {
       await CloseConnection(idorphone);
       return {Success:false,ErrMsg:"proxy is required"};
     }
-    account.proxy=Proxy;
-    await account.save();
+    await redisStorage.updateAccount(account.id, { proxy: Proxy });
     await CloseConnection(idorphone);
 
     return {Success:true,ErrMsg:""};
@@ -696,7 +651,7 @@ class AccountService {
       
       const account = await this.getAccount(idorphone);
       if(account){
-        await account.destroy();
+        await redisStorage.deleteAccount(account.id);
       }
       return {Success:true,ErrMsg:""};
     }catch(error){

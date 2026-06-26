@@ -1,4 +1,4 @@
-const Message = require("../models/Message");
+const redisStorage = require("../services/redisStorage");
 const { getConnection } = require("./baileys/connect");
 const logger = require("../utils/logger");
 
@@ -193,12 +193,7 @@ class MessageService {
    */
   async getChatHistory(accountId, chatId, limit = 50, offset = 0) {
     try {
-      return await Message.findAll({
-        where: { accountId, chatId },
-        order: [["createdAt", "DESC"]],
-        limit,
-        offset,
-      });
+      return await redisStorage.getMessagesByChat(chatId, limit, offset);
     } catch (error) {
       logger.error("Error getting chat history:", error);
       throw error;
@@ -210,13 +205,7 @@ class MessageService {
    */
   async updateMessageStatus(messageId, status) {
     try {
-      const message = await Message.findByPk(messageId);
-      if (!message) {
-        throw new Error("Message not found");
-      }
-
-      await message.update({ status });
-      return message;
+      return await redisStorage.updateMessageStatus(messageId, status);
     } catch (error) {
       logger.error("Error updating message status:", error);
       throw error;

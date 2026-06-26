@@ -20,17 +20,6 @@ async function errorHandler(ctx, next) {
       return;
     }
 
-    // Handle Sequelize errors
-    if (err.name === 'SequelizeValidationError') {
-      ctx.status = 400;
-      ctx.body = {
-        success: false,
-        message: 'Validation error',
-        errors: err.errors.map(e => e.message)
-      };
-      return;
-    }
-
     // Handle other errors
     ctx.status = err.status || 500;
     ctx.body = {

@@ -1,4 +1,4 @@
-const Group = require('../models/Group');
+const redisStorage = require('../services/redisStorage');
 const { getConnection } = require('./baileys/connect');
 const logger = require('../utils/logger');
 
@@ -13,16 +13,16 @@ class GroupService {
         throw new Error('WhatsApp connection not found');
       }
 
-      // Create WhatsApp group
       const response = await sock.groupCreate(name, participants);
       const groupId = response.id;
 
-      // Save to database
-      const group = await Group.create({
+      const group = await redisStorage.saveGroup({
         accountId,
         groupId,
         name,
-        participants: participants.map(p => ({ id: p, isAdmin: false }))
+        participants: participants.map(p => ({ id: p, isAdmin: false })),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       });
 
       return group;
@@ -32,38 +32,24 @@ class GroupService {
     }
   }
 
-  /**
-   * Get all groups for an account
-   */
   async getGroups(accountId) {
     try {
-      return await Group.findAll({
-        where: { accountId },
-        order: [['createdAt', 'DESC']]
-      });
+      return await redisStorage.getGroupsByAccountId(accountId);
     } catch (error) {
       logger.error('Error getting groups:', error);
       throw error;
     }
   }
 
-  /**
-   * Get group by ID
-   */
   async getGroupById(accountId, groupId) {
     try {
-      return await Group.findOne({
-        where: { accountId, groupId }
-      });
+      return await redisStorage.getGroupById(accountId, groupId);
     } catch (error) {
       logger.error('Error getting group:', error);
       throw error;
     }
   }
 
-  /**
-   * Update group settings
-   */
   async updateGroupSettings(accountId, groupId, settings) {
     try {
       const sock = await getConnection(accountId);
@@ -76,7 +62,6 @@ class GroupService {
         throw new Error('Group not found');
       }
 
-      // Update WhatsApp group settings
       if (settings.subject) {
         await sock.groupUpdateSubject(groupId, settings.subject);
       }
@@ -84,23 +69,21 @@ class GroupService {
         await sock.groupUpdateDescription(groupId, settings.description);
       }
 
-      // Update database
-      await group.update({
+      const updatedGroup = {
+        ...group,
         name: settings.subject || group.name,
         description: settings.description || group.description,
-        settings: { ...group.settings, ...settings }
-      });
+        settings: { ...group.settings, ...settings },
+        updatedAt: new Date().toISOString()
+      };
 
-      return group;
+      return await redisStorage.saveGroup(updatedGroup);
     } catch (error) {
       logger.error('Error updating group settings:', error);
       throw error;
     }
   }
 
-  /**
-   * Add participants to group
-   */
   async addParticipants(accountId, groupId, participants) {
     try {
       const sock = await getConnection(accountId);
@@ -113,26 +96,23 @@ class GroupService {
         throw new Error('Group not found');
       }
 
-      // Add to WhatsApp group
       await sock.groupParticipantsUpdate(groupId, participants, 'add');
 
-      // Update database
-      const currentParticipants = group.participants || [];
+      const currentParticipants = Array.isArray(group.participants) ? group.participants : [];
       const newParticipants = participants.map(p => ({ id: p, isAdmin: false }));
-      await group.update({
-        participants: [...currentParticipants, ...newParticipants]
-      });
+      const updatedGroup = {
+        ...group,
+        participants: [...currentParticipants, ...newParticipants],
+        updatedAt: new Date().toISOString()
+      };
 
-      return group;
+      return await redisStorage.saveGroup(updatedGroup);
     } catch (error) {
       logger.error('Error adding participants:', error);
       throw error;
     }
   }
 
-  /**
-   * Remove participant from group
-   */
   async removeParticipant(accountId, groupId, participantId) {
     try {
       const sock = await getConnection(accountId);
@@ -145,14 +125,16 @@ class GroupService {
         throw new Error('Group not found');
       }
 
-      // Remove from WhatsApp group
       await sock.groupParticipantsUpdate(groupId, [participantId], 'remove');
 
-      // Update database
-      const participants = group.participants.filter(p => p.id !== participantId);
-      await group.update({ participants });
+      const participants = (Array.isArray(group.participants) ? group.participants : []).filter(p => p.id !== participantId);
+      const updatedGroup = {
+        ...group,
+        participants,
+        updatedAt: new Date().toISOString()
+      };
 
-      return group;
+      return await redisStorage.saveGroup(updatedGroup);
     } catch (error) {
       logger.error('Error removing participant:', error);
       throw error;

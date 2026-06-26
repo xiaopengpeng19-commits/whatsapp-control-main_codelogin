@@ -98,22 +98,6 @@ class AccountController {
       let callbackfun=null;
       callbackfun=async()=>{
           console.log('callbackurl_callbackfun:',callbackurl);
-          // Save the account to the database
-          try {
-            const Account = require('../models/Account');
-            const newAccount = await Account.create({
-              id: account.id,
-              mark: account.mark,
-              proxy: account.proxy,
-              phoneNumber: account.phoneNumber,
-              socket_status: 'connected',
-              account_status: 'normal'
-            });
-            console.log('Account saved to database:', newAccount.id);
-          } catch (dbError) {
-            console.error('Failed to save account to database:', dbError);
-            // Continue execution even if database save fails
-          }
           if(callbackurl){
             const axios = require('axios');
             const axiosInstance = axios.create({
@@ -180,22 +164,6 @@ class AccountController {
         console.log("callbackurl:",callbackurl)
         callbackfun=async()=>{
           console.log('callbackurl:',callbackurl);
-          // Save the account to the database
-          try {
-            const Account = require('../models/Account');
-            const newAccount = await Account.create({
-              id: account.id,
-              mark: account.mark,
-              proxy: account.proxy,
-              phoneNumber: account.phoneNumber,
-              socket_status: 'connected',
-              account_status: 'normal'
-            });
-            console.log('Account saved to database:', newAccount.id);
-          } catch (dbError) {
-            console.error('Failed to save account to database:', dbError);
-            // Continue execution even if database save fails
-          }
           if(callbackurl){
             const axios = require('axios');
             const axiosInstance = axios.create({
@@ -385,20 +353,9 @@ class AccountController {
       const { id } = ctx.request.body;
 
       await accountService.DeleteAccount(id);
+      // Chats and contacts are now stored in Redis and will be removed by redisStorage.deleteAccount()
       try{
-        const Chat = require('../models/Chat');
-        await Chat.destroy({
-          where:{
-            accountId:id
-          }
-        });
-        const Contact = require('../models/Contact');
-        await Contact.destroy({
-          where:{
-            accountId:id
-          }
-        });
-        
+        // No SQL cleanup needed for Redis persistence
       }catch(e){}
       const sessionDir = path.join(process.env.STORAGE_PATH || './storage/sessions', id);
       if (fs.existsSync(sessionDir)) {
