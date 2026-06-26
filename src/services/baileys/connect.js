@@ -1,4 +1,4 @@
-const { default: makeWASocket,fetchLatestBaileysVersion, useMultiFileAuthState, DisconnectReason,getContentType,Browsers,makeCacheableSignalKeyStore } = require('baileys');
+const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState, DisconnectReason, getContentType, Browsers, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
@@ -32,7 +32,8 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
     }catch(error){
       console.log("createConnection error",accountId,error);
     }
-    // const { version, isLatest } = await fetchLatestBaileysVersion()
+    const { version } = await fetchLatestBaileysVersion();
+    console.log(`[Baileys] 使用版本: ${version.join('.')}`);
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     let proxyAgent;
@@ -43,16 +44,14 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
     let rejectresolve=null;
     let promise=null;
     const sock = makeWASocket({
-      // logger,
-      // version, //目前没具体作用
+      version,
       printQRInTerminal: false,
-      // browser: Browsers.macOS("Google Chrome"),//错误示范
-      // browser: ["Ubuntu","Chrome","22.04.4"], //风控点 如果风控打开 logger 注释 查看发送配对码之后的提示 
+      browser: Browsers.macOS("Google Chrome"),
       auth: state,
       agent: proxyAgent,
-      // syncFullHistory: true,
+      connectTimeoutMs: 60000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
-      retryRequestDelayMs:1000,
+      retryRequestDelayMs: 1000,
     });
     sock.account_status="logging";
     promise=new Promise(async(resolve,reject)=>{

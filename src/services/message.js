@@ -4,6 +4,12 @@ const logger = require("../utils/logger");
 
 const { Buffer } = require("node:buffer");
 const { delay } = require("../utils/common");
+
+function normalizeJid(jid) {
+  if (!jid) return jid;
+  return jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
+}
+
 class MessageService {
   /**
    * Send a message
@@ -74,19 +80,16 @@ class MessageService {
     return response;
   }
   async sendMessageWTyping(sock, jid, msg, DeleteForMe = false) {
-    // console.log("sockinstance:",sock);
-    if (jid.indexOf("@") == -1) {
-      jid = jid + "@s.whatsapp.net";
-    }
-    await sock.presenceSubscribe(jid);
+    const targetJid = normalizeJid(jid);
+
+    await sock.presenceSubscribe(targetJid);
     await delay(500);
 
-    await sock.sendPresenceUpdate("composing", jid);
+    await sock.sendPresenceUpdate("composing", targetJid);
     await delay(500);
 
-    await sock.sendPresenceUpdate("paused", jid);
-    //console.log("begin:message:",msg);
-    let response = await sock.sendMessage(jid, msg);
+    await sock.sendPresenceUpdate("paused", targetJid);
+    let response = await sock.sendMessage(targetJid, msg);
     console.log("response:", response);
     this.deleteMessage(sock, jid, response.key.id);
     return response;
@@ -100,7 +103,7 @@ class MessageService {
       }
       let response = await this.sendMessageWTyping(sock, To, {
         text: Text,
-        deleteForMe: DeleteForMe,
+        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
       });
       return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
     } catch (error) {
@@ -119,7 +122,7 @@ class MessageService {
       let response = await this.sendMessageWTyping(sock, To, {
         image: media,
         caption: Caption,
-        deleteForMe: DeleteForMe,
+        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
       });
       return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
     } catch (error) {
@@ -137,7 +140,7 @@ class MessageService {
       let response = await this.sendMessageWTyping(sock, To, {
         video: media,
         caption: Caption,
-        deleteForMe: DeleteForMe,
+        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
       });
       return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
     } catch (error) {
@@ -153,10 +156,7 @@ class MessageService {
       if (!sock) {
         return { status: 500, data: "cant get account info" };
       }
-      let toid = to;
-      if (toid.indexOf("@") == -1) {
-        toid = toid + "@s.whatsapp.net";
-      }
+      let toid = normalizeJid(to);
       // Update lastActiveTime on socket
       //console.log("msgtype:",type);
       sock.lastActiveTime = new Date();

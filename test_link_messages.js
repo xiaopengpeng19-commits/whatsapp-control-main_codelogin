@@ -1,75 +1,42 @@
 const axios = require('axios');
 
 // 测试配置
-const BASE_URL = 'http://localhost:3000/api/messages';
-const ACCOUNT_ID = 'test_account_123';
-const TEST_PHONE = '1234567890';
+const BASE_URL = 'http://localhost:8080/api/messages';
+const ACCOUNT_ID = '1';
+const TEST_PHONE = '8613800000000';
 
 // 测试数据
 const testData = {
   // 简单文本消息测试
   simple: {
     accountId: ACCOUNT_ID,
-    To: TEST_PHONE,
-    Title: "测试通知",
-    Description: "这是一个测试消息，包含重要链接。",
-    LinkUrl: "https://www.baidu.com"
+    to: TEST_PHONE,
+    content: "这是一条测试文本消息",
+    type: "text"
   },
 
   // 模板消息测试
   template: {
     accountId: ACCOUNT_ID,
-    To: TEST_PHONE,
-    Title: "产品推广",
-    Body: "我们最新的产品已经上线，具有更好的性能和更优惠的价格。",
-    Footer: "点击下方按钮了解更多",
-    LinkUrl: "https://www.baidu.com",
-    Buttons: [
-      {
-        index: 1,
-        urlButton: {
-          displayText: "查看产品",
-          url: "https://www.baidu.com"
-        }
-      }
-    ]
+    to: TEST_PHONE,
+    content: "这是一条模板消息测试",
+    type: "text"
   },
 
   // 交互式消息测试
   interactive: {
     accountId: ACCOUNT_ID,
-    To: TEST_PHONE,
-    Title: "活动邀请",
-    Body: "我们即将举办一场线上活动，邀请您参加！",
-    Footer: "请选择您的操作",
-    LinkUrl: "https://www.baidu.com",
-    Buttons: [
-      {
-        type: 1,
-        reply: {
-          id: "join_event",
-          title: "参加活动"
-        }
-      },
-      {
-        type: 1,
-        reply: {
-          id: "get_info",
-          title: "获取详情"
-        }
-      }
-    ]
+    to: TEST_PHONE,
+    content: "这是一条互动消息测试",
+    type: "text"
   },
 
   // 卡片式消息测试
   card: {
     accountId: ACCOUNT_ID,
-    To: TEST_PHONE,
-    Title: "新品发布",
-    Body: "我们刚刚发布了全新的产品系列，具有更好的性能和更优惠的价格。",
-    ImageUrl: "https://via.placeholder.com/300x200",
-    LinkUrl: "https://www.baidu.com",
-    ButtonText: "立即查看"
+    to: TEST_PHONE,
+    content: "这是一条卡片消息测试",
+    type: "text"
   }
 };
 
