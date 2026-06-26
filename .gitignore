@@ -4,3 +4,6 @@ log.log
 nohup.out
 venv/
 .idea
+# Env files
+.env
+.env.local
