@@ -27,7 +27,7 @@ class MessageController {
   async sendLinkMessage(ctx) {
     try {
       //const { accountId, to, content, type = 'text', caption, mediaUrl } = ctx.request.body;
-      ctx.body=await messageService.sendMessage(ctx.request.body)
+      ctx.body=await messageService.sendLinkMessage(ctx.request.body)
    
       
     } catch (error) {
