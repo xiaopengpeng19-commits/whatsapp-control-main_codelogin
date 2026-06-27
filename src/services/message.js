@@ -162,7 +162,7 @@ class MessageService {
         // TODO: implement document
       }
 
-      console.log("sendok!");
+      console.log("sendok! ",toid);
       return { status: 200, data: "send msg successfully" };
     } catch (error) {
       return { status: 500, data: error.message };
@@ -205,7 +205,7 @@ class MessageService {
    * 统一的按钮消息发送核心 (使用 malvin-btns)
    */
   async SendButtonMessage(params) {
-    const { accountId, To, Title, Body, Footer, ImageUrl, Buttons } = params;
+    const { accountId, to, title, body, footer, imageUrl, buttons } = params;
     const sock = await getConnection(accountId);
     if (!sock) {
       return { status: 500, data: "cant get account info" };
@@ -214,7 +214,7 @@ class MessageService {
     let toid = normalizeJid(to);
 
     try {
-      const formattedButtons = Buttons.map(btn => {
+      const formattedButtons = buttons.map(btn => {
         if (btn.name && btn.buttonParamsJson) {
           return btn;
         }
@@ -223,7 +223,7 @@ class MessageService {
           return {
             name: 'cta_url',
             buttonParamsJson: JSON.stringify({
-              display_text: btn.displayText || btn.display_text || '访问链接',
+              display_text: btn.display_text || '访问链接',
               url: btn.url
             })
           };
@@ -233,7 +233,7 @@ class MessageService {
           return {
             name: 'cta_call',
             buttonParamsJson: JSON.stringify({
-              display_text: btn.displayText || btn.display_text || '拨打电话',
+              display_text: btn.display_text || '拨打电话',
               phone_number: btn.phoneNumber
             })
           };
@@ -242,16 +242,16 @@ class MessageService {
         return {
           name: 'quick_reply',
           buttonParamsJson: JSON.stringify({
-            display_text: btn.displayText || btn.display_text || '按钮',
+            display_text: btn.display_text || '按钮',
             id: btn.id || `btn_${Date.now()}`
           })
         };
       });
 
       const buttonParams = {
-        title: Title || '',
-        text: Body || '',
-        footer: Footer || '',
+        title: title || '',
+        text: body || '',
+        footer: footer || '',
         buttons: formattedButtons
       };
 
@@ -268,7 +268,7 @@ class MessageService {
         Status: "sent"
       };
     } catch (error) {
-      console.error("SendButtonMessage error:", error);
+      console.error("SendButtonMessage toid: ",toid," error: ", error);
       return {
         Success: false,
         ErrMsg: error.message || String(error),

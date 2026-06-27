@@ -38,12 +38,7 @@
                   "callbackurl": {
                     "type": "string"
                   }
-                },
-                "x-apifox-orders": [
-                  "proxy",
-                  "callbackurl"
-                ],
-                "x-apifox-ignore-properties": []
+                }
               }
             }
           }
@@ -55,14 +50,10 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
-                  "x-apifox-ignore-properties": [],
-                  "x-apifox-orders": []
+                  "properties": {}
                 }
               }
-            },
-            "headers": {},
-            "x-apifox-name": "成功"
+            }
           }
         },
         "security": [],
@@ -84,9 +75,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
-                "x-apifox-orders": [],
-                "x-apifox-ignore-properties": []
+                "properties": {}
               }
             }
           }
@@ -98,14 +87,10 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
-                  "x-apifox-ignore-properties": [],
-                  "x-apifox-orders": []
+                  "properties": {}
                 }
               }
-            },
-            "headers": {},
-            "x-apifox-name": "成功"
+            }
           }
         },
         "security": [],
@@ -132,13 +117,9 @@
                     "type": "string"
                   }
                 },
-                "x-apifox-orders": [
-                  "id"
-                ],
                 "required": [
                   "id"
-                ],
-                "x-apifox-ignore-properties": []
+                ]
               }
             }
           }
@@ -150,14 +131,10 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
-                  "x-apifox-ignore-properties": [],
-                  "x-apifox-orders": []
+                  "properties": {}
                 }
               }
-            },
-            "headers": {},
-            "x-apifox-name": "成功"
+            }
           }
         },
         "security": [],
@@ -184,13 +161,9 @@
                     "type": "string"
                   }
                 },
-                "x-apifox-orders": [
-                  "id"
-                ],
                 "required": [
                   "id"
-                ],
-                "x-apifox-ignore-properties": []
+                ]
               }
             }
           }
@@ -202,14 +175,10 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {},
-                  "x-apifox-ignore-properties": [],
-                  "x-apifox-orders": []
+                  "properties": {}
                 }
               }
-            },
-            "headers": {},
-            "x-apifox-name": "成功"
+            }
           }
         },
         "security": [],
@@ -249,14 +218,7 @@
                     "description": "登录成功回调地址，可选"
                   }
                 },
-                "required": ["phoneNumber"],
-                "x-apifox-orders": [
-                  "phoneNumber",
-                  "proxy",
-                  "sessionId",
-                  "callbackUrl"
-                ],
-                "x-apifox-ignore-properties": []
+                "required": ["phoneNumber"]
               }
             }
           }
@@ -292,16 +254,7 @@
                       },
                       "description": "操作步骤"
                     }
-                  },
-                  "x-apifox-ignore-properties": [],
-                  "x-apifox-orders": [
-                    "success",
-                    "accountId",
-                    "phoneNumber",
-                    "pairingCode",
-                    "message",
-                    "instructions"
-                  ]
+                  }
                 },
                 "examples": {
                   "手机号登录成功": {
@@ -320,19 +273,10 @@
                         "6. 等待连接完成"
                       ]
                     }
-                  },
-                  "手机号格式错误": {
-                    "value": {
-                      "success": false,
-                      "message": "手机号码格式无效: 手机号码不能为空",
-                      "error": "LOGIN_FAILED"
-                    }
                   }
                 }
               }
-            },
-            "headers": {},
-            "x-apifox-name": "成功"
+            }
           }
         },
         "security": [],
@@ -690,7 +634,7 @@
       "post": {
         "summary": "发送链接消息（带按钮）",
         "deprecated": false,
-        "description": "发送带按钮的链接消息，使用 malvin-btns 的 sendButtons 方法\n\n支持三种按钮类型：\n- cta_url: 点击跳转链接\n- cta_call: 点击拨打电话\n- quick_reply: 快速回复按钮",
+        "description": "发送带按钮的链接消息，使用 malvin-btns 的 sendButtons 方法\n\n支持三种按钮类型：\n- cta_url: 点击跳转链接 (需要 url 字段)\n- cta_call: 点击拨打电话 (需要 phoneNumber 字段)\n- quick_reply: 快速回复按钮 (需要 id 字段)",
         "tags": [
           "message"
         ],
@@ -703,29 +647,35 @@
                 "properties": {
                   "accountId": {
                     "type": "string",
-                    "description": "账号ID或手机号"
+                    "description": "账号ID或手机号",
+                    "example": "86xxxxx"
                   },
-                  "To": {
+                  "to": {
                     "type": "string",
-                    "description": "接收方手机号或JID"
+                    "description": "接收方手机号或JID",
+                    "example": "86xxxx"
                   },
-                  "Title": {
+                  "title": {
                     "type": "string",
-                    "description": "消息标题"
+                    "description": "消息标题",
+                    "example": "产品介绍"
                   },
-                  "Body": {
+                  "body": {
                     "type": "string",
-                    "description": "消息正文"
+                    "description": "消息正文",
+                    "example": "我们最新的产品已经上线，欢迎查看详细信息和购买。"
                   },
-                  "Footer": {
+                  "footer": {
                     "type": "string",
-                    "description": "底部文本（可选）"
+                    "description": "底部文本",
+                    "example": "点击下方按钮访问产品页面"
                   },
-                  "ImageUrl": {
+                  "imageUrl": {
                     "type": "string",
-                    "description": "图片URL（可选）"
+                    "description": "图片URL",
+                    "example": "https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png"
                   },
-                  "Buttons": {
+                  "buttons": {
                     "type": "array",
                     "description": "按钮列表，最多3个",
                     "items": {
@@ -733,74 +683,103 @@
                       "properties": {
                         "id": {
                           "type": "string",
-                          "description": "按钮唯一ID（快速回复按钮必填）"
+                          "description": "按钮唯一ID（quick_reply类型必填）"
                         },
-                        "displayText": {
+                        "display_text": {
                           "type": "string",
-                          "description": "按钮显示文字"
+                          "description": "按钮显示文字",
+                          "example": "查看产品"
                         },
                         "name": {
                           "type": "string",
                           "enum": ["cta_url", "cta_call", "quick_reply"],
-                          "description": "按钮类型：cta_url=链接, cta_call=电话, quick_reply=快速回复"
+                          "description": "按钮类型：cta_url=链接, cta_call=电话, quick_reply=快速回复（默认）",
+                          "example": "cta_url"
                         },
                         "url": {
                           "type": "string",
-                          "description": "链接URL（cta_url类型必填）"
+                          "description": "链接URL（cta_url类型必填）",
+                          "example": "https://www.bilibili.com/"
                         },
                         "phoneNumber": {
                           "type": "string",
                           "description": "电话号码（cta_call类型必填）"
                         }
                       },
-                      "required": ["displayText"]
+                      "required": ["display_text"]
                     }
                   }
                 },
-                "required": ["accountId", "To", "Body", "Buttons"]
+                "required": ["accountId", "to", "body", "buttons"]
               },
               "examples": {
                 "URL链接按钮": {
                   "value": {
-                    "accountId": "8615239719312",
-                    "To": "8613800138000",
-                    "Title": "📢 产品介绍",
-                    "Body": "我们最新的产品已经上线，欢迎查看详细信息和购买。",
-                    "Footer": "点击下方按钮访问产品页面",
-                    "ImageUrl": "https://example.com/product.jpg",
-                    "Buttons": [
+                    "accountId": "86xxxxx",
+                    "to": "86xxxx",
+                    "title": "产品介绍",
+                    "body": "我们最新的产品已经上线，欢迎查看详细信息和购买。",
+                    "footer": "点击下方按钮访问产品页面",
+                    "imageUrl": "https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png",
+                    "buttons": [
                       {
                         "name": "cta_url",
-                        "displayText": "查看产品",
-                        "url": "https://example.com/product"
+                        "display_text": "查看产品",
+                        "url": "https://www.bilibili.com/"
                       }
                     ]
                   }
                 },
                 "多个快速回复按钮": {
                   "value": {
-                    "accountId": "8615239719312",
-                    "To": "8613800138000",
-                    "Title": "🤖 客服菜单",
-                    "Body": "请选择你需要的服务：",
-                    "Footer": "点击按钮回复",
-                    "Buttons": [
-                      { "id": "help", "displayText": "🆘 帮助" },
-                      { "id": "contact", "displayText": "📞 联系客服" },
-                      { "id": "website", "displayText": "🌐 访问官网" }
+                    "accountId": "86xxxxx",
+                    "to": "86xxxx",
+                    "title": "🤖 客服菜单",
+                    "body": "请选择你需要的服务：",
+                    "footer": "点击按钮回复",
+                    "buttons": [
+                      { "id": "help", "display_text": "🆘 帮助" },
+                      { "id": "contact", "display_text": "📞 联系客服" },
+                      { "id": "website", "display_text": "🌐 访问官网" }
                     ]
                   }
                 },
                 "电话按钮": {
                   "value": {
-                    "accountId": "8615239719312",
-                    "To": "8613800138000",
-                    "Title": "📞 联系我们",
-                    "Body": "如有紧急问题，请直接拨打：",
-                    "Buttons": [
+                    "accountId": "86xxxxx",
+                    "to": "86xxxx",
+                    "title": "📞 联系我们",
+                    "body": "如有紧急问题，请直接拨打：",
+                    "buttons": [
                       {
                         "name": "cta_call",
-                        "displayText": "立即拨打",
+                        "display_text": "立即拨打",
+                        "phoneNumber": "+8613800138000"
+                      }
+                    ]
+                  }
+                },
+                "混合按钮": {
+                  "value": {
+                    "accountId": "86xxxxx",
+                    "to": "86xxxx",
+                    "title": "🎉 活动邀请",
+                    "body": "我们即将举办线上活动，请选择：",
+                    "footer": "期待你的参与",
+                    "imageUrl": "https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png",
+                    "buttons": [
+                      {
+                        "name": "cta_url",
+                        "display_text": "查看详情",
+                        "url": "https://www.bilibili.com/"
+                      },
+                      {
+                        "id": "join",
+                        "display_text": "我要参加"
+                      },
+                      {
+                        "name": "cta_call",
+                        "display_text": "咨询电话",
                         "phoneNumber": "+8613800138000"
                       }
                     ]
@@ -836,9 +815,6 @@
                         },
                         "Status": {
                           "type": "string"
-                        },
-                        "MessageId": {
-                          "type": "string"
                         }
                       }
                     }
@@ -851,7 +827,7 @@
                       "data": {
                         "Success": true,
                         "ErrMsg": "",
-                        "To": "8613800138000",
+                        "To": "86xxxx",
                         "Status": "sent"
                       }
                     }

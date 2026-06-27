@@ -492,6 +492,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
               accountPhone: account.phoneNumber,
               messageId: msg.key.id,
               remoteJid: msg.key.remoteJid,
+              remoteJidAlt: msg.key.remoteJidAlt,
               fromMe: msg.key.fromMe,
               timestamp: msg.messageTimestamp,
               pushName: msg.pushName,
