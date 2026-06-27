@@ -255,8 +255,8 @@ class MessageService {
         buttons: formattedButtons
       };
 
-      if (ImageUrl) {
-        buttonParams.image = { url: ImageUrl };
+      if (imageUrl) {
+        buttonParams.image = { url: imageUrl };
       }
 
       await sendButtons(sock, toid, buttonParams);
