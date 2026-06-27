@@ -348,7 +348,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
 
     // Handle messages
     sock.ev.on('messages.upsert', async (m) => {
-      console.log('got messages', m.messages,m.type)
+      // console.log('got messages', m.messages,m.type)
       if (m.type === 'notify' || m.type==='append') {
         // Update last active time when a message is received
        
@@ -356,8 +356,9 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
         sock.lastActiveTime = new Date();
         for (const msg of m.messages){
           try{
+            console.log('msg: ', msg)
             // 获取消息类型
-            const messageType = getContentType(msg);
+            const messageType = getContentType(msg.message);
             console.log(`Message type: ${messageType}`);
             
             // 处理特殊命令消息
