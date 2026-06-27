@@ -261,18 +261,13 @@ class MessageService {
 
       await sendButtons(sock, toid, buttonParams);
 
-      return {
-        Success: true,
-        ErrMsg: "",
-        To: To,
-        Status: "sent"
-      };
+      return { status: 200, data: "send msg successfully" };
     } catch (error) {
       console.error("SendButtonMessage toid: ",toid," error: ", error);
       return {
         Success: false,
         ErrMsg: error.message || String(error),
-        To: To,
+        To: toid,
         Status: "failed"
       };
     }
