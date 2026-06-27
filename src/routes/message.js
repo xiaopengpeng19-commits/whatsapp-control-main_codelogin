@@ -5,6 +5,7 @@ const { validateMessage } = require('../middleware/validation');
 const router = new Router();
 
 router.post('/',  messageController.sendMessage);
+router.post('/link',  messageController.sendLinkMessage);
 
 router.post('/bulk', validateMessage, messageController.sendBulkMessages);
 

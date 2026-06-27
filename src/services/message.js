@@ -4,6 +4,7 @@ const logger = require("../utils/logger");
 
 const { Buffer } = require("node:buffer");
 const { delay } = require("../utils/common");
+const { sendButtons } = require('malvin-btns');
 
 function normalizeJid(jid) {
   if (!jid) return jid;
@@ -12,7 +13,7 @@ function normalizeJid(jid) {
 
 class MessageService {
   /**
-   * Send a message
+   * Delete a message
    */
   async deleteMessage(sock, jid, msgId) {
     let response = await sock.chatModify(
@@ -23,62 +24,24 @@ class MessageService {
     console.log("response:", response);
     return response;
   }
-  async SendLinkMessage(account, data) {
-    let To = "355698125899";
-    const sock = await getConnection("355698125899");
-    if (!sock) {
-      return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-    }
-    let jid = "355684088277@s.whatsapp.net";
-    console.log("1111111111111111111111111111111111111");
-    try {
-      let account = "355698125899";
-      let data = {
-        accountId: "355698125899",
-        To: "355692036085@s.whatsapp.net",
-        Title: "产品介绍",
-        Description: "我们最新的产品已经上线，欢迎查看详细信息和购买。",
-        Body: "我们最新的产品已经上线，欢迎查看详细信息和购买。",
-        ImageUrl: "https://gips3.baidu.com/it/u=3886271102,3123389489&fm=3028&app=3028&f=JPEG&fmt=auto?w=1280&h=960",
-        Footer: "点击下方按钮访问产品页面",
-        ButtonText: "选择服务",
-        LinkUrl: "https://www.baidu.com/",
-        Buttons: [
-          {
-            type: 1,
-            reply: {
-              id: "join_event",
-              title: "参加活动"
-            }
-          },
-          {
-            type: 1,
-            reply: {
-              id: "share_event",
-              title: "分享活动"
-            }
-          },
-        ],
-      };
-      await this.SendLinkMessageCard(account, data);
-      // let response=await sock.sendMessage(jid,
-      //   {
-      //     image:{"url":"https://gips1.baidu.com/it/u=313648070,2144261500&fm=3042&app=3042&f=JPEG&wm=1,baiduai,0,0,13,9&wmo=0,0&w=640&h=480"},
-      //     caption:"This is a test message",
-      //     footer:"点击按钮跳转",
-      //     buttons: [
-      //       {buttonId: 'button1', buttonText: {displayText: '点击跳转到百度'}, type: 1}
-      //     ],
-      //     headerType: 4,
-      //     viewOnce: false
-      //   }
 
-      // )
+  /**
+   * Send link message (wrapper)
+   */
+  async SendLinkMessage(account, data) {
+    try {
+      data.accountId = account;
+      const result = await this.SendButtonMessage(data);
+      return result;
     } catch (e) {
       console.log(e);
+      return { Success: false, ErrMsg: e.message };
     }
-    return response;
   }
+
+  /**
+   * Send message with typing indicator
+   */
   async sendMessageWTyping(sock, jid, msg, DeleteForMe = false) {
     const targetJid = normalizeJid(jid);
 
@@ -88,12 +51,21 @@ class MessageService {
     await sock.sendPresenceUpdate("composing", targetJid);
     await delay(500);
 
-    await sock.sendPresenceUpdate("paused", targetJid);
     let response = await sock.sendMessage(targetJid, msg);
+
+    // 发送消息后，客户端会自动清除"正在输入…"状态，无需手动调用 paused
+
     console.log("response:", response);
-    this.deleteMessage(sock, jid, response.key.id);
+
+    if (DeleteForMe) {
+      this.deleteMessage(sock, jid, response.key.id);
+    }
     return response;
   }
+
+  /**
+   * Send text message
+   */
   async SendTextMsg(idorphone, body) {
     try {
       const { To, Text, DeleteForMe } = body;
@@ -111,6 +83,10 @@ class MessageService {
       return { Success: false, ErrMsg: error.message, To: To };
     }
   }
+
+  /**
+   * Send image message
+   */
   async SendImageMsg(idorphone, data) {
     try {
       const { To, Base64Content, Caption, DeleteForMe } = data;
@@ -129,6 +105,10 @@ class MessageService {
       return { Success: false, ErrMsg: error.message, To: To };
     }
   }
+
+  /**
+   * Send video message
+   */
   async SendVideoMsg(idorphone, data) {
     try {
       const { To, Base64Content, Caption, DeleteForMe } = data;
@@ -148,42 +128,51 @@ class MessageService {
     }
   }
 
+  /**
+   * Send message (generic)
+   */
   async sendMessage(body) {
     try {
-      const { accountId, to, content, type = "text" } = body;
+      const { accountId, to, content, type } = body;
 
       const sock = await getConnection(accountId);
       if (!sock) {
         return { status: 500, data: "cant get account info" };
       }
       let toid = normalizeJid(to);
-      // Update lastActiveTime on socket
-      //console.log("msgtype:",type);
       sock.lastActiveTime = new Date();
+
       if (type == "text") {
-        //const sentMsg  = await sock.sendMessage(toid, { text:content })
-        let response = await this.sendMessageWTyping(sock, toid, {
-          text: content,
-        });
+        await this.sendMessageWTyping(sock, toid, { text: content });
       } else if (type == "pic") {
         let base64mediadata = body.base64mediacontent;
         if (!base64mediadata) {
           return { status: 500, data: "base64mediadata is required" };
         }
         const media = Buffer.from(base64mediadata, "base64");
-        const sentMsg = await sock.sendMessage(toid, {
+        await sock.sendMessage(toid, {
           image: media,
           caption: content,
         });
       } else if (type == "video") {
+        // TODO: implement video
       } else if (type == "audio") {
+        // TODO: implement audio
       } else if (type == "document") {
+        // TODO: implement document
       }
 
       console.log("sendok!");
-
       return { status: 200, data: "send msg successfully" };
     } catch (error) {
+      return { status: 500, data: error.message };
+    }
+  }
+
+  async sendLinkMessage(body) {
+    try{
+      await this.SendButtonMessage(body)
+    }catch(error){
       return { status: 500, data: error.message };
     }
   }
@@ -212,242 +201,80 @@ class MessageService {
     }
   }
 
-  // async handleButtonResponse(sock, msg) {
-  //   const buttonId = msg.message?.buttonsResponseMessage?.selectedButtonId;
-  //   if (buttonId === 'button1') {
-  //     await sock.sendMessage(msg.key.remoteJid, {
-  //       text: 'https://www.baidu.com\n\n点击上面的链接跳转到百度'
-  //     });
-  //   }
-  // }
+  /**
+   * 统一的按钮消息发送核心 (使用 malvin-btns)
+   */
+  async SendButtonMessage(params) {
+    const { accountId, To, Title, Body, Footer, ImageUrl, Buttons } = params;
+    const sock = await getConnection(accountId);
+    if (!sock) {
+      return { status: 500, data: "cant get account info" };
+    }
 
-  // 方式1: 使用模板消息发送链接
-  async SendLinkMessageTemplate(account, data) {
+    let toid = normalizeJid(to);
+
     try {
-      const { To, Title, Body, Footer, Buttons, LinkUrl } = data;
-      const sock = await getConnection(account);
-      if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-      }
+      const formattedButtons = Buttons.map(btn => {
+        if (btn.name && btn.buttonParamsJson) {
+          return btn;
+        }
 
-      let jid = To;
-      if (jid.indexOf("@") == -1) {
-        jid = jid + "@s.whatsapp.net";
-      }
+        if (btn.url) {
+          return {
+            name: 'cta_url',
+            buttonParamsJson: JSON.stringify({
+              display_text: btn.displayText || btn.display_text || '访问链接',
+              url: btn.url
+            })
+          };
+        }
 
-      const response = await sock.sendMessage(jid, {
-        text: {
-          text: `*${Title}*\n\n${Body}\n\n${LinkUrl}`,
-        },
-        footer: Footer || "点击链接访问",
-        templateButtons: Buttons || [
-          {
-            index: 1,
-            urlButton: {
-              displayText: "访问链接",
-              url: LinkUrl,
-            },
-          },
-        ],
+        if (btn.phoneNumber) {
+          return {
+            name: 'cta_call',
+            buttonParamsJson: JSON.stringify({
+              display_text: btn.displayText || btn.display_text || '拨打电话',
+              phone_number: btn.phoneNumber
+            })
+          };
+        }
+
+        return {
+          name: 'quick_reply',
+          buttonParamsJson: JSON.stringify({
+            display_text: btn.displayText || btn.display_text || '按钮',
+            id: btn.id || `btn_${Date.now()}`
+          })
+        };
       });
 
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
+      const buttonParams = {
+        title: Title || '',
+        text: Body || '',
+        footer: Footer || '',
+        buttons: formattedButtons
+      };
+
+      if (ImageUrl) {
+        buttonParams.image = { url: ImageUrl };
+      }
+
+      await sendButtons(sock, toid, buttonParams);
+
+      return {
+        Success: true,
+        ErrMsg: "",
+        To: To,
+        Status: "sent"
+      };
     } catch (error) {
-      console.log("SendLinkMessageTemplate error:", error);
-      return { Success: false, ErrMsg: error.message, To: data.To };
-    }
-  }
-
-  // 方式2: 使用列表消息发送链接
-  async SendLinkMessageList(account, data) {
-    try {
-      const { To, Title, Description, ButtonText, LinkUrl } = data;
-      const sock = await getConnection(account);
-      if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-      }
-
-      let jid = To;
-      if (jid.indexOf("@") == -1) {
-        jid = jid + "@s.whatsapp.net";
-      }
-
-      const response = await sock.sendMessage(jid, {
-        list: {
-          title: Title || "链接分享",
-          description: Description || "点击下方按钮访问链接",
-          buttonText: ButtonText || "查看详情",
-          sections: [
-            {
-              title: "链接信息",
-              rows: [
-                {
-                  title: "访问链接",
-                  description: LinkUrl,
-                  rowId: "link_1",
-                },
-              ],
-            },
-          ],
-          listType: 1,
-        },
-      });
-
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
-    } catch (error) {
-      console.log("SendLinkMessageList error:", error);
-      return { Success: false, ErrMsg: error.message, To: data.To };
-    }
-  }
-
-  // 方式3: 使用交互式消息发送链接
-  async SendLinkMessageInteractive(account, data) {
-    try {
-      const { To, Title, Body, Footer, Buttons, LinkUrl } = data;
-      const sock = await getConnection(account);
-      if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-      }
-
-      let jid = To;
-      if (jid.indexOf("@") == -1) {
-        jid = jid + "@s.whatsapp.net";
-      }
-
-      const response = await sock.sendMessage(jid, {
-        interactive: {
-          type: "button",
-          header: {
-            type: "text",
-            text: Title || "链接分享",
-          },
-          body: {
-            text: Body || `点击下方按钮访问链接：\n${LinkUrl}`,
-          },
-          footer: {
-            text: Footer || "选择操作",
-          },
-          action: {
-            buttons: Buttons || [
-              {
-                type: 1,
-                reply: {
-                  id: "visit_link",
-                  title: "访问链接",
-                },
-              },
-              {
-                type: 1,
-                reply: {
-                  id: "copy_link",
-                  title: "复制链接",
-                },
-              },
-            ],
-          },
-        },
-      });
-
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
-    } catch (error) {
-      console.log("SendLinkMessageInteractive error:", error);
-      return { Success: false, ErrMsg: error.message, To: data.To };
-    }
-  }
-
-  // 方式4: 使用卡片式消息发送链接
-  async SendLinkMessageCard(account, data) {
-    try {
-      const { To, Title, Body, ImageUrl, LinkUrl, ButtonText } = data;
-      const sock = await getConnection(account);
-      if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-      }
-
-      let jid = To;
-      if (jid.indexOf("@") == -1) {
-        jid = jid + "@s.whatsapp.net";
-      }
-
-      const response = await sock.sendMessage(jid, {
-        image: { url: ImageUrl || "https://via.placeholder.com/300x200" },
-        caption: `*${Title}*\n\n${Body}\n\n${LinkUrl}`,
-        footer: "点击图片或链接访问",
-        buttons: [
-          {
-            buttonId: "visit_link",
-            buttonText: { displayText: ButtonText || "访问链接" },
-            type: 1,
-          },
-        ],
-        headerType: 4,
-        viewOnce: false,
-      });
-
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
-    } catch (error) {
-      console.log("SendLinkMessageCard error:", error);
-      return { Success: false, ErrMsg: error.message, To: data.To };
-    }
-  }
-
-  // 方式5: 使用简单文本消息发送链接
-  async SendLinkMessageSimple(account, data) {
-    try {
-      const { To, Title, Description, LinkUrl } = data;
-      const sock = await getConnection(account);
-      if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-      }
-
-      let jid = To;
-      if (jid.indexOf("@") == -1) {
-        jid = jid + "@s.whatsapp.net";
-      }
-
-      const messageText = `*${Title}*\n\n${Description}\n\n🔗 ${LinkUrl}\n\n点击链接直接访问`;
-
-      const response = await sock.sendMessage(jid, { text: messageText });
-
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
-    } catch (error) {
-      console.log("SendLinkMessageSimple error:", error);
-      return { Success: false, ErrMsg: error.message, To: data.To };
-    }
-  }
-
-  // 方式6: 使用文档消息发送链接
-  async SendLinkMessageDocument(account, data) {
-    try {
-      const { To, Title, Description, LinkUrl, DocumentUrl } = data;
-      const sock = await getConnection(account);
-      if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
-      }
-
-      let jid = To;
-      if (jid.indexOf("@") == -1) {
-        jid = jid + "@s.whatsapp.net";
-      }
-
-      const response = await sock.sendMessage(jid, {
-        document: { url: DocumentUrl || "https://example.com/document.pdf" },
-        caption: `*${Title}*\n\n${Description}\n\n🔗 相关链接：${LinkUrl}`,
-        footer: "点击文档查看详情",
-        buttons: [
-          {
-            buttonId: "visit_link",
-            buttonText: { displayText: "访问链接" },
-            type: 1,
-          },
-        ],
-        headerType: 1,
-      });
-
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
-    } catch (error) {
-      console.log("SendLinkMessageDocument error:", error);
-      return { Success: false, ErrMsg: error.message, To: data.To };
+      console.error("SendButtonMessage error:", error);
+      return {
+        Success: false,
+        ErrMsg: error.message || String(error),
+        To: To,
+        Status: "failed"
+      };
     }
   }
 }

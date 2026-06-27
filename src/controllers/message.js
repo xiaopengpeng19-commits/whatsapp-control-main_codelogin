@@ -22,6 +22,25 @@ class MessageController {
   }
 
   /**
+   * Send a message
+   */
+  async sendLinkMessage(ctx) {
+    try {
+      //const { accountId, to, content, type = 'text', caption, mediaUrl } = ctx.request.body;
+      ctx.body=await messageService.sendMessage(ctx.request.body)
+   
+      
+    } catch (error) {
+    
+      ctx.body = {
+        status:500,
+        message: error.message
+      };
+    }
+  }
+  
+
+  /**
    * Send bulk messages
    */
   async sendBulkMessages(ctx) {
