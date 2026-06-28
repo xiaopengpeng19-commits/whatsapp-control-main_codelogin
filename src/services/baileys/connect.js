@@ -288,13 +288,13 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
     // Handle message receipt updates (已读回执) - 方式1
     sock.ev.on('message-receipt.update', async (updates) => {
       console.log('got message receipts update', updates);
-      await handleReceiptUpdates(updates);
+      await handleMessageUpdate(updates);
     });
 
     // Handle message receipt updates (已读回执) - 方式2 (兼容不同版本)
     sock.ev.on('messages.update', async (updates) => {
       console.log('got messages.update', updates);
-      await handleReceiptUpdates(updates);
+      await handleMessageUpdate(updates);
     });
 
     // 统一处理消息状态更新（基于 messages.update 事件）
