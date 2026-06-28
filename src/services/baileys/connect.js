@@ -285,15 +285,10 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
        }
     }
   });
-    // Handle message receipt updates (已读回执) - 方式1
-    sock.ev.on('message-receipt.update', async (updates) => {
-      console.log('got message receipts update', updates);
-      await handleReceiptUpdates(updates);
-    });
-
+    
     // Handle message receipt updates (已读回执) - 方式2 (兼容不同版本)
-    sock.ev.on('messages.receipt.update', async (updates) => {
-      console.log('got messages receipt update', updates);
+    sock.ev.on('messages.update', async (updates) => {
+      console.log('got messages.update', updates);
       await handleReceiptUpdates(updates);
     });
 
