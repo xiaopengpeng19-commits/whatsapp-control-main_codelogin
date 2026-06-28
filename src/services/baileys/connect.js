@@ -285,58 +285,62 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
        }
     }
   });
-    
+    // Handle message receipt updates (已读回执) - 方式1
+    sock.ev.on('message-receipt.update', async (updates) => {
+      console.log('got message receipts update', updates);
+      await handleReceiptUpdates(updates);
+    });
+
     // Handle message receipt updates (已读回执) - 方式2 (兼容不同版本)
     sock.ev.on('messages.update', async (updates) => {
       console.log('got messages.update', updates);
       await handleReceiptUpdates(updates);
     });
 
-    // 统一处理回执更新的函数
-    const handleReceiptUpdates = async (updates) => {
-      for (const update of updates) {
+    // 统一处理消息状态更新（基于 messages.update 事件）
+    const handleMessageUpdate = async (updates) => {
+      for (const updateData of updates) {
         try {
+          const { key, update } = updateData;
+          
+          // 只关心 status: 3 (已送达) 和 status: 4 (已读)
+          if (update.status !== 3 && update.status !== 4) {
+            continue;
+          }
+          
+          // 状态码转文字（基于实测）
+          const statusMap = {
+            3: 'delivery_ack',   // 已送达
+            4: 'read'            // 已读
+          };
+          
+          const statusText = statusMap[update.status] || `unknown(${update.status})`;
+          
+          // 构建回执数据
           const receiptData = {
-            accountId,
+            accountId: accountId,
             accountPhone: account.phoneNumber,
-            messageId: update.key.id,
-            remoteJid: update.key.remoteJid,
-            fromMe: update.key.fromMe,
-            receipt: update.receipt,
-            receiptTimestamp: update.receiptTimestamp,
-            participant: update.key.participant,
-           // type: 'receipt_update',
-            MessageType:"msg_status_update"
+            messageId: key.id,
+            remoteJid: key.remoteJid,
+            fromMe: key.fromMe || false,
+            receipt: statusText,
+            receiptTimestamp: update.messageTimestamp || Math.floor(Date.now() / 1000),
+            participant: key.participant || null,
+            MessageType: "msg_status_update",
+            statusCode: update.status
           };
           
           // 发布回执更新到 NATS
           await nats.publishMessage(`msgs`, receiptData);
           
-          // 根据回执类型记录日志和处理逻辑
-          const receiptType = update.receipt;
-          switch (receiptType) {
-            case 'read':
-              console.log(`✓✓ Message ${update.key.id} was READ by ${update.key.remoteJid}`);
-              break;
-            case 'read-self':
-              console.log(`✓✓ Message ${update.key.id} was READ by sender (read-self)`);
-              break;
-            case 'played':
-              console.log(`🎵 Voice message ${update.key.id} was PLAYED by ${update.key.remoteJid}`);
-              break;
-            case 'delivered':
-              console.log(`✓ Message ${update.key.id} was DELIVERED to ${update.key.remoteJid}`);
-              break;
-            case 'server-ack':
-              console.log(`📤 Message ${update.key.id} received by server`);
-              break;
-            default:
-              console.log(`📋 Message ${update.key.id} receipt: ${receiptType}`);
-          }
+          // 日志输出
+          const text = update.status === 4 ? '已读' : '已送达';
+          console.log(`[${key.fromMe ? '自己发送' : '对方消息'}] ${key.id} -> ${text}`);
           
-          logger.info(`Receipt update published to NATS: ${update.key.id} - ${receiptType}`);
+          logger.info(`Message status update: ${key.id} - ${statusText} (code: ${update.status})`);
+          
         } catch (error) {
-          logger.error(`Error processing receipt update: ${error}`);
+          logger.error(`Error processing message update: ${error}`);
         }
       }
     };
