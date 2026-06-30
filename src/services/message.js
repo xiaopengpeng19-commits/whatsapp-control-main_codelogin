@@ -31,6 +31,12 @@ class MessageService {
   async SendLinkMessage(account, data) {
     try {
       data.accountId = account;
+
+      const sock = await getConnection(account);
+      if (!sock) {
+        return { Success: false, ErrMsg: "cant connect to whatsapp" };
+      }
+
       const result = await this.SendButtonMessage(data);
       return result;
     } catch (e) {
@@ -259,9 +265,10 @@ class MessageService {
         buttonParams.image = { url: imageUrl };
       }
 
-      await sendButtons(sock, toid, buttonParams);
+      let response = await sendButtons(sock, toid, buttonParams);
 
-      return { status: 200, data: "send msg successfully" };
+      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
+
     } catch (error) {
       console.error("SendButtonMessage toid: ",toid," error: ", error);
       return {
