@@ -1,3 +1,4 @@
+// message.js - 修改所有方法返回统一格式
 const redisStorage = require("../services/redisStorage");
 const { getConnection } = require("./baileys/connect");
 const logger = require("../utils/logger");
@@ -31,17 +32,15 @@ class MessageService {
   async SendLinkMessage(account, data) {
     try {
       data.accountId = account;
-
       const sock = await getConnection(account);
       if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp" };
+        return { code: 500, message: "cant connect to whatsapp", data: null };
       }
-
       const result = await this.SendButtonMessage(data);
       return result;
     } catch (e) {
       console.log(e);
-      return { Success: false, ErrMsg: e.message };
+      return { code: 500, message: e.message, data: null };
     }
   }
 
@@ -50,19 +49,12 @@ class MessageService {
    */
   async sendMessageWTyping(sock, jid, msg, DeleteForMe = false) {
     const targetJid = normalizeJid(jid);
-
     await sock.presenceSubscribe(targetJid);
     await delay(500);
-
     await sock.sendPresenceUpdate("composing", targetJid);
     await delay(500);
-
     let response = await sock.sendMessage(targetJid, msg);
-
-    // 发送消息后，客户端会自动清除"正在输入…"状态，无需手动调用 paused
-
     console.log("response:", response);
-
     if (DeleteForMe) {
       this.deleteMessage(sock, jid, response.key.id);
     }
@@ -70,35 +62,42 @@ class MessageService {
   }
 
   /**
-   * Send text message
+   * Send text message - 统一返回格式
    */
   async SendTextMsg(idorphone, body) {
     try {
       const { To, Text, DeleteForMe } = body;
       const sock = await getConnection(idorphone);
       if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
+        return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
       }
       let response = await this.sendMessageWTyping(sock, To, {
         text: Text,
         ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
       });
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          to: To,
+          messageId: response.key.id
+        }
+      };
     } catch (error) {
       console.log("SendTextMsg error:", error);
-      return { Success: false, ErrMsg: error.message, To: To };
+      return { code: 500, message: error.message, data: { to: To } };
     }
   }
 
   /**
-   * Send image message
+   * Send image message - 统一返回格式
    */
   async SendImageMsg(idorphone, data) {
     try {
       const { To, Base64Content, Caption, DeleteForMe } = data;
       const sock = await getConnection(idorphone);
       if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
+        return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
       }
       const media = Buffer.from(Base64Content, "base64");
       let response = await this.sendMessageWTyping(sock, To, {
@@ -106,21 +105,28 @@ class MessageService {
         caption: Caption,
         ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
       });
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          to: To,
+          messageId: response.key.id
+        }
+      };
     } catch (error) {
-      return { Success: false, ErrMsg: error.message, To: To };
+      return { code: 500, message: error.message, data: { to: To } };
     }
   }
 
   /**
-   * Send video message
+   * Send video message - 统一返回格式
    */
   async SendVideoMsg(idorphone, data) {
     try {
       const { To, Base64Content, Caption, DeleteForMe } = data;
       const sock = await getConnection(idorphone);
       if (!sock) {
-        return { Success: false, ErrMsg: "cant connect to whatsapp", To: To };
+        return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
       }
       const media = Buffer.from(Base64Content, "base64");
       let response = await this.sendMessageWTyping(sock, To, {
@@ -128,58 +134,74 @@ class MessageService {
         caption: Caption,
         ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
       });
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          to: To,
+          messageId: response.key.id
+        }
+      };
     } catch (error) {
-      return { Success: false, ErrMsg: error.message, To: To };
+      return { code: 500, message: error.message, data: { to: To } };
     }
   }
 
   /**
-   * Send message (generic)
+   * Send message (generic) - 统一返回格式
    */
   async sendMessage(body) {
     try {
       const { accountId, to, content, type } = body;
-
       const sock = await getConnection(accountId);
       if (!sock) {
-        return { status: 500, data: "cant get account info" };
+        return { code: 500, message: "cant get account info", data: null };
       }
       let toid = normalizeJid(to);
       sock.lastActiveTime = new Date();
 
+      let response;
       if (type == "text") {
-        await this.sendMessageWTyping(sock, toid, { text: content });
+        response = await this.sendMessageWTyping(sock, toid, { text: content });
       } else if (type == "pic") {
         let base64mediadata = body.base64mediacontent;
         if (!base64mediadata) {
-          return { status: 500, data: "base64mediadata is required" };
+          return { code: 500, message: "base64mediadata is required", data: null };
         }
         const media = Buffer.from(base64mediadata, "base64");
-        await sock.sendMessage(toid, {
+        response = await sock.sendMessage(toid, {
           image: media,
           caption: content,
         });
       } else if (type == "video") {
         // TODO: implement video
+        return { code: 500, message: "video not implemented", data: null };
       } else if (type == "audio") {
-        // TODO: implement audio
+        return { code: 500, message: "audio not implemented", data: null };
       } else if (type == "document") {
-        // TODO: implement document
+        return { code: 500, message: "document not implemented", data: null };
       }
 
-      console.log("sendok! ",toid);
-      return { status: 200, data: "send msg successfully" };
+      console.log("sendok! ", toid);
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          to: to,
+          messageId: response?.key?.id || null
+        }
+      };
     } catch (error) {
-      return { status: 500, data: error.message };
+      return { code: 500, message: error.message, data: null };
     }
   }
 
   async sendLinkMessage(body) {
-    try{
-      await this.SendButtonMessage(body)
-    }catch(error){
-      return { status: 500, data: error.message };
+    try {
+      const result = await this.SendButtonMessage(body);
+      return result;
+    } catch (error) {
+      return { code: 500, message: error.message, data: null };
     }
   }
 
@@ -208,13 +230,13 @@ class MessageService {
   }
 
   /**
-   * 统一的按钮消息发送核心 (使用 malvin-btns)
+   * 统一的按钮消息发送核心 (使用 malvin-btns) - 统一返回格式
    */
   async SendButtonMessage(params) {
     const { accountId, to, title, body, footer, imageUrl, buttons } = params;
     const sock = await getConnection(accountId);
     if (!sock) {
-      return { status: 500, data: "cant get account info" };
+      return { code: 500, message: "cant get account info", data: null };
     }
 
     let toid = normalizeJid(to);
@@ -224,7 +246,6 @@ class MessageService {
         if (btn.name && btn.buttonParamsJson) {
           return btn;
         }
-
         if (btn.url) {
           return {
             name: 'cta_url',
@@ -234,7 +255,6 @@ class MessageService {
             })
           };
         }
-
         if (btn.phoneNumber) {
           return {
             name: 'cta_call',
@@ -244,7 +264,6 @@ class MessageService {
             })
           };
         }
-
         return {
           name: 'quick_reply',
           buttonParamsJson: JSON.stringify({
@@ -267,15 +286,20 @@ class MessageService {
 
       let response = await sendButtons(sock, toid, buttonParams);
 
-      return { Success: true, ErrMsg: "", To: To, MessageId: response.key.id };
-
-    } catch (error) {
-      console.error("SendButtonMessage toid: ",toid," error: ", error);
       return {
-        Success: false,
-        ErrMsg: error.message || String(error),
-        To: toid,
-        Status: "failed"
+        code: 200,
+        message: "success",
+        data: {
+          to: to,
+          messageId: response.key.id
+        }
+      };
+    } catch (error) {
+      console.error("SendButtonMessage toid: ", toid, " error: ", error);
+      return {
+        code: 500,
+        message: error.message || String(error),
+        data: { to: toid }
       };
     }
   }
