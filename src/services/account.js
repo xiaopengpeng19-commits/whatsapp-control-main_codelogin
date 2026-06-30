@@ -601,7 +601,7 @@ class AccountService {
       return {Success:true,ErrMsg:""};
      }
      else{
-      return {Success:true,ErrMsg:"connectioned"};
+      return {Success:false,ErrMsg:"connection failed"};
      }
   }catch(error){
     return {Success:false,ErrMsg:error.message};
