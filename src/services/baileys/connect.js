@@ -322,6 +322,7 @@ async function createConnection(account,callbackfun=null,retry_n=5,paircode=fals
             accountPhone: account.phoneNumber,
             messageId: key.id,
             remoteJid: key.remoteJid,
+            remoteJidAlt: key.remoteJidAlt,
             fromMe: key.fromMe || false,
             receipt: statusText,
             receiptTimestamp: update.messageTimestamp || Math.floor(Date.now() / 1000),

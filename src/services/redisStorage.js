@@ -156,6 +156,21 @@ async function upsertAccount(account) {
   };
 
   await client.hSet(accountKey, flattenObject(updated));
+
+
+  if(account.phoneNumber){
+    // 构建回执数据
+    const connectionData = {
+      accountId: accountId,
+      accountPhone: account.phoneNumber,
+      updatedAt: now,
+      accountStatus: account.account_status
+    };
+      
+    // 发布回执更新到 NATS
+    await nats.publishMessage(`connection`, connectionData);
+  }
+  
   return updated;
 }
 
