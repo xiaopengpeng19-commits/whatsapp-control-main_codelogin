@@ -1,638 +1,787 @@
-const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState, DisconnectReason, getContentType, Browsers, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
+// services/baileys/connect.js
+const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState, DisconnectReason, getContentType, Browsers, makeCacheableSignalKeyStore, generateMessageIDV2, proto } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
-const logger = require('../../utils/logger');
-
-const nats = require('../../config/nats');
-const redisStorage = require('../redisStorage');
-const {NodeCache} = require('@cacheable/node-cache');
-const { SocksProxyAgent }=require('socks-proxy-agent');
+const P = require('pino');
+const { NodeCache } = require('@cacheable/node-cache');
+const { SocksProxyAgent } = require('socks-proxy-agent');
 const snowflake = require('../../utils/snowflake');
+const redisStorage = require('../redisStorage');
+const nats = require('../../config/nats');
+
+// 创建日志记录器 - 参考官方示例
+const logger = P({
+  level: process.env.LOG_LEVEL || 'trace',
+  transport: {
+    targets: [
+      {
+        target: 'pino-pretty',
+        options: { colorize: true },
+        level: 'trace',
+      },
+      {
+        target: 'pino/file',
+        options: { destination: './wa-logs.txt' },
+        level: 'trace',
+      },
+    ],
+  },
+});
+
 // Map to store active WhatsApp connections
 const connections = new Map();
-const groupCache = new NodeCache({stdTTL: 5 * 60, useClones: false})
+const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
+
+// 消息重试计数器缓存 - 参考官方示例
+const msgRetryCounterCache = new NodeCache();
+
+// 登录状态常量
+const LOGIN_STATUS = {
+  WAITING_QR: 'waiting_qr',
+  WAITING_PAIR_CODE: 'waiting_pair',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  FAILED: 'failed',
+  EXPIRED: 'expired',
+  BANNED: 'banned'
+};
+
 /**
- * Create a WhatsApp connection
- * @param {string} accountId - The unique account ID
- * @returns {Promise<Object>} - Socket connection object
+ * 创建 WhatsApp 连接
+ * @param {Object} account - 账号信息
+ * @param {Function} onConnected - 连接成功回调
+ * @param {number} retryCount - 重试次数
+ * @param {boolean} usePairCode - 是否使用配对码登录
+ * @returns {Promise<Object>} - 连接结果
  */
-async function createConnection(account,callbackfun=null,retry_n=5,paircode=false) {
-  const accountId=account.id;
+async function createConnection(account, onConnected = null, retryCount = 5, usePairCode = false) {
+  const accountId = account.id;
+  let resolveFunc = null;
+  let rejectFunc = null;
+  
+  // 创建登录 Promise
+  const loginPromise = new Promise((resolve, reject) => {
+    resolveFunc = resolve;
+    rejectFunc = reject;
+  });
+
   try {
-    let timeoutId=null;
-    let sessionDir=null;
-    try{
-      sessionDir = path.join( './storage/sessions', account.id+'');
+    let timeoutId = null;
+    let sessionDir = null;
+    
+    try {
+      sessionDir = path.join('./storage/sessions', account.id + '');
       if (!fs.existsSync(sessionDir)) {
         fs.mkdirSync(sessionDir, { recursive: true });
       }
-    }catch(error){
-      console.log("createConnection error",accountId,error);
+    } catch (error) {
+      logger.error(`[${accountId}] 创建会话目录失败:`, error);
     }
-    const { version } = await fetchLatestBaileysVersion();
-    console.log(`[Baileys] 使用版本: ${version.join('.')}`);
 
+    // 获取最新版本 - 参考官方示例
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    logger.debug({ version: version.join('.'), isLatest }, `[${accountId}] 使用最新 WA 版本`);
+
+    // 加载认证状态
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-    let proxyAgent;
-    if(account.proxy){
-      proxyAgent = new SocksProxyAgent(account.proxy);
+    
+    // 代理配置
+    let proxyAgent = null;
+    if (account.proxy) {
+      try {
+        proxyAgent = new SocksProxyAgent(account.proxy);
+        logger.info(`[${accountId}] 使用代理: ${account.proxy}`);
+      } catch (error) {
+        logger.error(`[${accountId}] 代理配置失败:`, error);
+      }
     }
-    let successresolve=null;
-    let rejectresolve=null;
-    let promise=null;
+
+    // 创建 socket - 参考官方示例配置
     const sock = makeWASocket({
       version,
-      printQRInTerminal: false,
-      browser: Browsers.macOS("Google Chrome"),
-      auth: state,
+      logger,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
       agent: proxyAgent,
+      msgRetryCounterCache,
       connectTimeoutMs: 60000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
-    });
-    sock.account_status="logging";
-    promise=new Promise(async(resolve,reject)=>{
-      successresolve=resolve;
-      rejectresolve=reject;
-      timeoutId = global.setTimeout(() => {
-        logger.error(`[Timeout] WhatsApp 连接超时，accountId: ${accountId}, phone: ${account.phoneNumber}, paircode: ${paircode}`);
-        closeConnection(accountId);
-        reject(new Error('Connection timeout'));
-      }, 1000*12);
-      timeoutId.unref();
-    }).finally(()=>{
-      if(timeoutId){
-        clearTimeout(timeoutId);
-      }
-    });
-    sock.lastActiveTime=new Date();
-    sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('messaging-history.set',async(event)=>{
-      console.log('on messaging-history.set');
-      
-      const{
-        messages,
-        groups,
-        chats,
-        contacts,
-        syncType,
-        isLatest,
-      }=event;
-      
-      console.log('messages:',messages);
-     
-      console.log('syncType:',syncType);
-      console.log('isLatest:',isLatest);
-      console.log('chats:',chats);
-      console.log('contacts:',contacts);
-      console.log('event:',Object.keys(event));
-      for(const chat of chats){
-       try{
-        console.log('chat:',chat);
-        await redisStorage.upsertChat({
-          id:snowflake.nextId(),
-          peerPhone:chat.id.split('@')[0],
-          peerId:chat.id,
-          peerName:'',
-          accountPhone:account.phoneNumber,
-          accountId:accountId,
-          isGroup:chat.id.includes('g.us'),
-          lastMessageTime:chat.lastMessageRecvTimestamp,
-        });
-       }catch(error){
-        console.log('error:',error);
-       }
-       
-      }
-
-      for(const contact of contacts){
-        try{
-          console.log('contact:',contact);
-          await redisStorage.upsertChat({
-            id:snowflake.nextId(),
-            peerPhone:contact.id.split('@')[0],
-            peerId:contact.id,
-            peerName:contact.name,
-            accountId:accountId,
-            accountPhone:account.phoneNumber,
-            isGroup:contact.id.includes('g.us'),
-          });
-        }catch(error){
-          console.log('error:',error);
-        }
-      }
-
-    });
-    sock.ev.on('groups.update', async ([event]) => {
-      const metadata = await sock.groupMetadata(event.id)
-      groupCache.set(event.id, metadata)
-    })
-    sock.ev.on('group-participants.update', async (event) => {
-    const metadata = await sock.groupMetadata(event.id)
-    groupCache.set(event.id, metadata)
-    })
-    // Handle connection updates
-    sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-      // --- 区分登录方式 ---
-      if (paircode) {
-        // 只在 qr 事件触发时请求配对码
-        if (qr && !sock.pairingCodeRequested) {
-          sock.pairingCodeRequested = true;
-          try {
-            
-            // logger.info(` ${account.phoneNumber} qr code  ${qr}`);
-            const code = await sock.requestPairingCode(account.phoneNumber);
-            logger.info(`[Pairing] 配对码生成成功: ${code}`);
-            successresolve({status:403,qr:code});
-            await redisStorage.upsertAccount({
-              id: accountId,
-              phoneNumber: account.phoneNumber || null,
-              mark: account.mark,
-              proxy: account.proxy,
-              socket_status: 'connecting',
-              account_status: 'connecting'
-            });
-          } catch (err) {
-            logger.error(`[Pairing] requestPairingCode 异常:`, err);
-            rejectresolve && rejectresolve(err);
-          }
-        }
-      } else {
-        // 二维码登录
-        if (qr) {
-          try {
-            successresolve({status:403,qr:qr});
-            logger.info(`QR code generated for account ${accountId}`);
-            await redisStorage.upsertAccount({
-              id: accountId,
-              phoneNumber: account.phoneNumber || null,
-              mark: account.mark,
-              proxy: account.proxy,
-              socket_status: 'connecting',
-              account_status: 'connecting'
-            });
-          } catch (error) {
-            logger.error(`Failed to store QR code for account ${accountId}:`, error);
-          }
-        }
-      }
-      // --- 其余连接状态处理不变 ---
-      if (connection === 'close') {
-        const shouldReconnect = (lastDisconnect?.error instanceof  Boom) && lastDisconnect.error?.output?.statusCode!==403 &&
-            (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut && lastDisconnect.error.message!='QR refs attempts ended');
-            retry_n--;
-        logger.info(`Connection closed for ${accountId} due to ${lastDisconnect.error},${lastDisconnect.error?.output?.statusCode}, reconnecting: ${shouldReconnect}`);
-        if (shouldReconnect) {
-          if( retry_n>0){
-            await new Promise(resolve => global.setTimeout(resolve, 1000));
-            return await createConnection(account,callbackfun,retry_n,paircode);
-          }else{
-            if(rejectresolve){
-              console.log('call rejectresolve');
-              sock.account_status="expired";
-              await redisStorage.upsertAccount({
-                id: accountId,
-                phoneNumber: account.phoneNumber || null,
-                mark: account.mark,
-                proxy: account.proxy,
-                account_status: 'expired'
-              });
-              rejectresolve(new Error('Connection timeout'));
-            }
-          }
-        } else {
-          if(lastDisconnect.error?.output?.statusCode==403){
-            sock.account_status="banned";
-            await redisStorage.upsertAccount({
-              id: accountId,
-              phoneNumber: account.phoneNumber || null,
-              mark: account.mark,
-              proxy: account.proxy,
-              account_status: 'banned'
-            });
-            const sessionDir = `./storage/sessions/${accountId}`;
-          }else{
-            sock.account_status="expired";
-            await redisStorage.upsertAccount({
-              id: accountId,
-              phoneNumber: account.phoneNumber || null,
-              mark: account.mark,
-              proxy: account.proxy,
-              account_status: 'expired'
-            });
-          }
-          const sessionDir = `./storage/sessions/${accountId}`;
-          try {
-            const files = fs.readdirSync(sessionDir);
-            if (files.length === 0) {
-              fs.rmdirSync(sessionDir);
-              logger.info(`Removed empty session directory for account ${accountId}`);
-            }
-          } catch (error) {
-            logger.error(`Error checking/removing session directory for ${accountId}:`, error);
-          }
-          connections.delete(accountId);
-        }
-      } else if (connection === 'open') {
-        console.log(`WhatsApp connection established for ${accountId},callbackfun:${callbackfun}`);
-        const phoneNumber = sock.user?.id?.split(':')[0];
-        account.phoneNumber=phoneNumber;
-        account.account_status='normal';
-        sock.account_status="normal";
-          await redisStorage.upsertAccount({
-            id: accountId,
-            phoneNumber: phoneNumber || null,
-            mark: account.mark,
-            proxy: account.proxy,
-            socket_status: 'connected',
-            account_status: 'normal',
-            lastActive: new Date().toISOString()
-          });
-          console.log('connection open');
-          if(successresolve){
-            console.log('call successresolve');
-            successresolve({status:200,sock:sock});
-          }
-        if(callbackfun){
-          console.log("call callbackfun")
-          console.log("caLL;",callbackfun)
-          await callbackfun();
-          callbackfun=null;
-        }
-      }
-    });
-   // 添加聊天列表保存逻辑
-   sock.ev.on('chats.upsert', async (chats) => {
-    console.log('got chats',chats)
-   
-    for (const chat of chats){
-      try{
-        console.log('chat:',chat);
-        await redisStorage.upsertChat({
-          id:snowflake.nextId(),
-          peerPhone:chat.id.split('@')[0],
-          peerId:chat.id,
-          peerName:'',
-          accountPhone:account.phoneNumber,
-          accountId:accountId,
-          isGroup:chat.id.includes('g.us'),
-          lastMessageTime:chat.lastMessageRecvTimestamp,
-        });
-       }catch(error){
-        console.log('error:',error);
-       }
-    }
-  });
-    // Handle message receipt updates (已读回执) - 方式1
-    sock.ev.on('message-receipt.update', async (updates) => {
-      console.log('got message receipts update', updates);
-      await handleMessageUpdate(updates);
-    });
-
-    // Handle message receipt updates (已读回执) - 方式2 (兼容不同版本)
-    sock.ev.on('messages.update', async (updates) => {
-      console.log('got messages.update', updates);
-      await handleMessageUpdate(updates);
-    });
-
-    // 统一处理消息状态更新（基于 messages.update 事件）
-    const handleMessageUpdate = async (updates) => {
-      for (const updateData of updates) {
+      generateHighQualityLinkPreview: true,
+      browser: Browsers.macOS("Google Chrome"),
+      // getMessage 实现 - 用于消息重试和占位符重新发送
+      getMessage: async (key) => {
         try {
-          const { key, update } = updateData;
-          
-          // 只关心 status: 3 (已送达) 和 status: 4 (已读)
-          if (update.status !== 3 && update.status !== 4) {
-            continue;
+          // 从 Redis 获取消息
+          const stored = await redisStorage.getMessageById(key.id);
+          if (stored && stored.message) {
+            // 如果是字符串，尝试解析为对象
+            if (typeof stored.message === 'string') {
+              try {
+                return JSON.parse(stored.message);
+              } catch {
+                return proto.Message.create({ conversation: stored.message });
+              }
+            }
+            return stored.message;
           }
-          
-          // 状态码转文字（基于实测）
-          const statusMap = {
-            3: 'delivery_ack',   // 已送达
-            4: 'read'            // 已读
-          };
-          
-          const statusText = statusMap[update.status] || `unknown(${update.status})`;
-          
-          // 构建回执数据
-          const receiptData = {
-            accountId: accountId,
-            accountPhone: account.phoneNumber,
-            messageId: key.id,
-            remoteJid: key.remoteJid,
-            remoteJidAlt: key.remoteJidAlt,
-            fromMe: key.fromMe || false,
-            receipt: statusText,
-            receiptTimestamp: update.messageTimestamp || Math.floor(Date.now() / 1000),
-            participant: key.participant || null,
-            MessageType: "msg_status_update",
-            statusCode: update.status
-          };
-          
-          // 发布回执更新到 NATS
-          await nats.publishMessage(`msgs`, receiptData);
-          
-          // 日志输出
-          const text = update.status === 4 ? '已读' : '已送达';
-          console.log(`[${key.fromMe ? '自己发送' : '对方消息'}] ${key.id} -> ${text}`);
-          
-          logger.info(`Message status update: ${key.id} - ${statusText} (code: ${update.status})`);
-          
+          // 如果找不到，返回一个空消息
+          return proto.Message.create({ conversation: '' });
         } catch (error) {
-          logger.error(`Error processing message update: ${error}`);
+          logger.error(`[${accountId}] getMessage 失败:`, error);
+          return proto.Message.create({ conversation: '' });
         }
       }
+    });
+
+    // 设置初始状态
+    sock.account_status = LOGIN_STATUS.CONNECTING;
+    sock.lastActiveTime = new Date();
+
+    // 超时处理
+    const timeoutDuration = usePairCode ? 60000 : 120000;
+    timeoutId = setTimeout(() => {
+      logger.error(`[${accountId}] 登录超时 (${timeoutDuration/1000}秒)`);
+      sock.account_status = LOGIN_STATUS.FAILED;
+      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED);
+      if (rejectFunc) {
+        rejectFunc(new Error('登录超时'));
+      }
+    }, timeoutDuration);
+
+    // ---------- 使用 process 方法统一处理所有事件 (参考官方示例) ----------
+    sock.ev.process(async (events) => {
+      
+      // 处理凭证更新
+      if (events['creds.update']) {
+        await saveCreds();
+        logger.debug(`[${accountId}] 凭证已保存`);
+      }
+
+      // 处理连接更新
+      if (events['connection.update']) {
+        const update = events['connection.update'];
+        const { connection, lastDisconnect, qr } = update;
+
+        logger.debug(`[${accountId}] 连接更新:`, update);
+
+        // --- 处理配对码登录 (参考官方示例逻辑) ---
+        if (qr && usePairCode && !sock.authState.creds.registered) {
+          const phoneNumber = account.phoneNumber;
+          if (!phoneNumber) {
+            logger.error(`[${accountId}] 配对码登录失败: 缺少手机号`);
+            rejectFunc(new Error('配对码登录需要提供手机号'));
+            return;
+          }
+
+          try {
+            logger.info(`[${accountId}] 请求配对码，手机号: ${phoneNumber}`);
+            const code = await sock.requestPairingCode(phoneNumber);
+            logger.info(`[${accountId}] 配对码生成成功: ${code}`);
+            
+            // 更新账号状态
+            await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE);
+            
+            // 返回配对码
+            if (resolveFunc) {
+              resolveFunc({
+                status: 'waiting_pair_code',
+                code: code,
+                accountId: accountId,
+                phoneNumber: account.phoneNumber
+              });
+            }
+          } catch (err) {
+            logger.error(`[${accountId}] 请求配对码失败:`, err);
+            sock.account_status = LOGIN_STATUS.FAILED;
+            updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED);
+            rejectFunc(err);
+          }
+          return;
+        }
+
+        // --- 处理二维码登录 ---
+        if (qr && !usePairCode) {
+          logger.info(`[${accountId}] QR码已生成`);
+          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR);
+          
+          if (resolveFunc) {
+            resolveFunc({
+              status: 'waiting_qr',
+              qr: qr,
+              accountId: accountId
+            });
+          }
+        }
+
+        // --- 处理连接关闭 (参考官方示例重连逻辑) ---
+        if (connection === 'close') {
+          const statusCode = (lastDisconnect?.error instanceof Boom) 
+            ? lastDisconnect.error?.output?.statusCode 
+            : null;
+          
+          // 如果不是登出状态，尝试重连
+          const shouldReconnect = statusCode !== DisconnectReason.loggedOut 
+            && statusCode !== 403 
+            && lastDisconnect?.error?.message !== 'QR refs attempts ended';
+
+          logger.warn(`[${accountId}] 连接关闭, 状态码: ${statusCode}, 重试: ${shouldReconnect}`);
+
+          if (shouldReconnect && retryCount > 0) {
+            logger.info(`[${accountId}] 剩余重试次数: ${retryCount}`);
+            // 递归重试
+            const result = await createConnection(account, onConnected, retryCount - 1, usePairCode);
+            if (result && resolveFunc) {
+              resolveFunc(result);
+            }
+            return;
+          } else {
+            // 连接失败，设置状态
+            const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
+            sock.account_status = status;
+            await updateAccountStatus(accountId, account.phoneNumber, status);
+            
+            // 清理会话
+            await cleanupSession(accountId);
+            connections.delete(accountId);
+            
+            if (rejectFunc) {
+              rejectFunc(new Error(`连接失败: ${lastDisconnect?.error?.message || '未知错误'}`));
+            }
+          }
+        }
+
+        // --- 处理连接成功 ---
+        if (connection === 'open') {
+          const phoneNumber = sock.user?.id?.split(':')[0];
+          account.phoneNumber = phoneNumber;
+          sock.account_status = LOGIN_STATUS.CONNECTED;
+          sock.lastActiveTime = new Date();
+
+          // 更新账号信息
+          await updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED);
+          
+          // 存储连接
+          connections.set(accountId, sock);
+
+          logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
+
+          // 执行回调
+          if (onConnected) {
+            try {
+              await onConnected(sock);
+            } catch (err) {
+              logger.error(`[${accountId}] 回调执行失败:`, err);
+            }
+          }
+
+          // 通知登录成功
+          if (resolveFunc) {
+            resolveFunc({
+              status: 'connected',
+              sock: sock,
+              accountId: accountId,
+              phoneNumber: phoneNumber
+            });
+          }
+        }
+      }
+
+      // ---------- 处理消息历史同步 (参考官方示例) ----------
+      if (events['messaging-history.set']) {
+        const { chats, contacts, messages, isLatest, progress, syncType } = events['messaging-history.set'];
+        logger.debug({
+          contacts: contacts?.length || 0, 
+          chats: chats?.length || 0, 
+          messages: messages?.length || 0, 
+          isLatest, 
+          progress,
+          syncType: syncType?.toString()
+        }, `[${accountId}] 消息历史同步`);
+
+        try {
+          // 保存聊天
+          for (const chat of chats || []) {
+            await redisStorage.upsertChat({
+              id: snowflake.nextId(),
+              peerPhone: chat.id?.split('@')[0] || chat.id,
+              peerId: chat.id,
+              peerName: chat.name || '',
+              accountPhone: account.phoneNumber,
+              accountId: accountId,
+              isGroup: chat.id?.includes('g.us') || false,
+              lastMessageTime: chat.lastMessageRecvTimestamp,
+            });
+          }
+
+          // 保存联系人
+          for (const contact of contacts || []) {
+            await redisStorage.upsertChat({
+              id: snowflake.nextId(),
+              peerPhone: contact.id?.split('@')[0] || contact.id,
+              peerId: contact.id,
+              peerName: contact.name || contact.notify || '',
+              accountId: accountId,
+              accountPhone: account.phoneNumber,
+              isGroup: contact.id?.includes('g.us') || false,
+            });
+          }
+        } catch (error) {
+          logger.error(`[${accountId}] 保存消息历史失败:`, error);
+        }
+      }
+
+      // ---------- 处理新消息 (参考官方示例) ----------
+      if (events['messages.upsert']) {
+        const upsert = events['messages.upsert'];
+        logger.debug(`[${accountId}] 消息更新: type=${upsert.type}`);
+
+        // 处理占位符重发请求
+        if (!!upsert.requestId) {
+          logger.debug(`[${accountId}] 占位符请求消息接收:`, upsert.requestId);
+        }
+
+        if (upsert.type === 'notify' || upsert.type === 'append') {
+          sock.lastActiveTime = new Date();
+          
+          for (const msg of upsert.messages || []) {
+            try {
+              // 处理特殊命令 (参考官方示例)
+              const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+              
+              if (text === 'requestPlaceholder' && !upsert.requestId) {
+                const messageId = await sock.requestPlaceholderResend(msg.key);
+                logger.debug(`[${accountId}] 请求占位符重发, id=${messageId}`);
+                continue;
+              }
+
+              if (text === 'onDemandHistSync') {
+                const messageId = await sock.fetchMessageHistory(50, msg.key, msg.messageTimestamp);
+                logger.debug(`[${accountId}] 请求按需历史同步, id=${messageId}`);
+                continue;
+              }
+
+              // 正常消息处理
+              await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
+              
+            } catch (error) {
+              logger.error(`[${accountId}] 处理消息失败:`, error);
+            }
+          }
+        }
+      }
+
+      // ---------- 处理消息状态更新 ----------
+      if (events['messages.update']) {
+        logger.debug(`[${accountId}] 消息状态更新:`, events['messages.update']);
+        await handleMessageStatusUpdate(events['messages.update'], accountId, account.phoneNumber);
+      }
+
+      // ---------- 处理消息回执 ----------
+      if (events['message-receipt.update']) {
+        logger.debug(`[${accountId}] 消息回执更新:`, events['message-receipt.update']);
+        await handleMessageReceiptUpdate(events['message-receipt.update'], accountId, account.phoneNumber);
+      }
+
+      // ---------- 处理聊天更新 ----------
+      if (events['chats.upsert']) {
+        const chats = events['chats.upsert'];
+        logger.debug(`[${accountId}] 聊天更新: ${chats?.length || 0} 个`);
+        
+        for (const chat of chats || []) {
+          try {
+            await redisStorage.upsertChat({
+              id: snowflake.nextId(),
+              peerPhone: chat.id?.split('@')[0] || chat.id,
+              peerId: chat.id,
+              peerName: chat.name || '',
+              accountPhone: account.phoneNumber,
+              accountId: accountId,
+              isGroup: chat.id?.includes('g.us') || false,
+              lastMessageTime: chat.lastMessageRecvTimestamp,
+            });
+          } catch (error) {
+            logger.error(`[${accountId}] 保存聊天失败:`, error);
+          }
+        }
+      }
+
+      // ---------- 处理群组更新 ----------
+      if (events['groups.update']) {
+        for (const event of events['groups.update'] || []) {
+          try {
+            const metadata = await sock.groupMetadata(event.id);
+            groupCache.set(event.id, metadata);
+          } catch (error) {
+            logger.error(`[${accountId}] 更新群组缓存失败:`, error);
+          }
+        }
+      }
+
+      if (events['group-participants.update']) {
+        for (const event of events['group-participants.update'] || []) {
+          try {
+            const metadata = await sock.groupMetadata(event.id);
+            groupCache.set(event.id, metadata);
+          } catch (error) {
+            logger.error(`[${accountId}] 更新群成员缓存失败:`, error);
+          }
+        }
+      }
+
+      // ---------- 其他事件日志 ----------
+      if (events['labels.association']) {
+        logger.debug(`[${accountId}] 标签关联事件`);
+      }
+
+      if (events['labels.edit']) {
+        logger.debug(`[${accountId}] 标签编辑事件`);
+      }
+
+      if (events['call']) {
+        logger.debug(`[${accountId}] 通话事件`);
+      }
+
+      if (events['contacts.update']) {
+        logger.debug(`[${accountId}] 联系人更新事件`);
+      }
+
+      if (events['chats.delete']) {
+        logger.debug(`[${accountId}] 聊天删除事件`);
+      }
+
+      if (events['presence.update']) {
+        logger.debug(`[${accountId}] 在线状态更新`);
+      }
+
+      if (events['messages.reaction']) {
+        logger.debug(`[${accountId}] 消息反应事件`);
+      }
+    });
+
+    // 等待登录完成
+    const result = await loginPromise;
+    clearTimeout(timeoutId);
+    return result;
+
+  } catch (error) {
+    logger.error(`[${accountId}] 创建连接失败:`, error);
+    return {
+      status: 'failed',
+      error: error.message
+    };
+  }
+}
+
+/**
+ * 更新账号状态到 Redis
+ */
+async function updateAccountStatus(accountId, phoneNumber, status) {
+  try {
+    const accountData = {
+      id: accountId,
+      phoneNumber: phoneNumber || null,
+      socket_status: status,
+      account_status: status === LOGIN_STATUS.CONNECTED ? 'normal' : status,
+      lastActive: new Date().toISOString()
+    };
+    
+    // 只更新存在性，不覆盖已有字段
+    const existing = await redisStorage.getAccountById(accountId);
+    if (existing) {
+      await redisStorage.updateAccount(accountId, accountData);
+    } else {
+      await redisStorage.upsertAccount(accountData);
+    }
+  } catch (error) {
+    logger.error(`[${accountId}] 更新账号状态失败:`, error);
+  }
+}
+
+/**
+ * 清理会话文件
+ */
+async function cleanupSession(accountId) {
+  try {
+    const sessionDir = `./storage/sessions/${accountId}`;
+    if (fs.existsSync(sessionDir)) {
+      const files = fs.readdirSync(sessionDir);
+      if (files.length === 0) {
+        fs.rmdirSync(sessionDir);
+        logger.info(`[${accountId}] 清理空会话目录`);
+      } else {
+        // 如果文件存在但连接失败，可以保留用于调试
+        logger.info(`[${accountId}] 会话目录非空，保留: ${files.length} 个文件`);
+      }
+    }
+  } catch (error) {
+    logger.error(`[${accountId}] 清理会话失败:`, error);
+  }
+}
+
+/**
+ * 处理接收到的消息
+ */
+async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
+  try {
+    const messageType = getContentType(msg.message);
+    
+    // 构建消息数据
+    const messageData = {
+      accountId,
+      accountPhone,
+      messageId: msg.key.id,
+      remoteJid: msg.key.remoteJid,
+      remoteJidAlt: msg.key.remoteJidAlt,
+      fromMe: msg.key.fromMe || false,
+      timestamp: msg.messageTimestamp,
+      pushName: msg.pushName,
+      participant: msg.key.participant,
+      messageType: messageType,
+      content: extractMessageContent(msg.message),
+      rawMessage: msg.message
     };
 
-    // Handle messages
-    sock.ev.on('messages.upsert', async (m) => {
-      // console.log('got messages', m.messages,m.type)
-      if (m.type === 'notify' || m.type==='append') {
-        // Update last active time when a message is received
-       
-        
-        sock.lastActiveTime = new Date();
-        for (const msg of m.messages){
-          try{
-            console.log('msg: ', msg)
-            // 获取消息类型
-            const messageType = getContentType(msg.message);
-            console.log(`Message type: ${messageType}`);
-            
-            // 处理特殊命令消息
-            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-            if (text && (text === "requestPlaceholder" || text === "onDemandHistSync")) {
-              if (text === "requestPlaceholder") {
-                const messageId = await sock.requestPlaceholderResend(msg.key);
-                console.log('requested placeholder resync, id=', messageId);
-              } else {
-                const messageId = await sock.fetchMessageHistory(50, msg.key, msg.messageTimestamp);
-                console.log('requested on-demand sync, id=', messageId);
-              }
-              continue;
-            }
-
-            // 根据消息类型设置MessageType和content
-            let content = '';
-            let msgType = 'msg_unknown';
-            let mediaInfo = null;
-
-            switch (messageType) {
-              case 'conversation':
-              case 'extendedTextMessage':
-                content = text || '';
-                msgType = 'msg_text';
-                break;
-                
-              case 'imageMessage':
-                content = msg.message.imageMessage?.caption || '';
-                msgType = 'msg_image';
-                mediaInfo = {
-                  mimetype: msg.message.imageMessage?.mimetype,
-                  url: msg.message.imageMessage?.url,
-                  fileLength: msg.message.imageMessage?.fileLength,
-                  height: msg.message.imageMessage?.height,
-                  width: msg.message.imageMessage?.width
-                };
-                // 下载图片
-                (async () => {
-                  try {
-                    const stream = await downloadMediaMessage(msg, 'stream', {}, {
-                      logger,
-                      reuploadRequest: sock.updateMediaMessage
-                    });
-                    const writeStream = createWriteStream(`./imgdata/${msg.key.id}.jpeg`);
-                    stream.pipe(writeStream);
-                  } catch (error) {
-                    logger.error('Error downloading image:', error);
-                  }
-                })();
-                break;
-
-              case 'videoMessage':
-                content = msg.message.videoMessage?.caption || '';
-                msgType = 'msg_video';
-                mediaInfo = {
-                  mimetype: msg.message.videoMessage?.mimetype,
-                  url: msg.message.videoMessage?.url,
-                  fileLength: msg.message.videoMessage?.fileLength,
-                  seconds: msg.message.videoMessage?.seconds,
-                  height: msg.message.videoMessage?.height,
-                  width: msg.message.videoMessage?.width
-                };
-                break;
-
-              case 'audioMessage':
-                content = '';
-                msgType = msg.message.audioMessage?.ptt ? 'msg_voice' : 'msg_audio';
-                mediaInfo = {
-                  mimetype: msg.message.audioMessage?.mimetype,
-                  url: msg.message.audioMessage?.url,
-                  fileLength: msg.message.audioMessage?.fileLength,
-                  seconds: msg.message.audioMessage?.seconds,
-                  ptt: msg.message.audioMessage?.ptt // 是否为语音消息
-                };
-                break;
-
-              case 'documentMessage':
-                content = msg.message.documentMessage?.caption || '';
-                msgType = 'msg_document';
-                mediaInfo = {
-                  mimetype: msg.message.documentMessage?.mimetype,
-                  url: msg.message.documentMessage?.url,
-                  fileLength: msg.message.documentMessage?.fileLength,
-                  fileName: msg.message.documentMessage?.fileName,
-                  title: msg.message.documentMessage?.title
-                };
-                break;
-
-              case 'stickerMessage':
-                content = '';
-                msgType = 'msg_sticker';
-                mediaInfo = {
-                  mimetype: msg.message.stickerMessage?.mimetype,
-                  url: msg.message.stickerMessage?.url,
-                  fileLength: msg.message.stickerMessage?.fileLength,
-                  height: msg.message.stickerMessage?.height,
-                  width: msg.message.stickerMessage?.width
-                };
-                break;
-
-              case 'locationMessage':
-                content = msg.message.locationMessage?.name || '';
-                msgType = 'msg_location';
-                mediaInfo = {
-                  latitude: msg.message.locationMessage?.degreesLatitude,
-                  longitude: msg.message.locationMessage?.degreesLongitude,
-                  name: msg.message.locationMessage?.name,
-                  address: msg.message.locationMessage?.address
-                };
-                break;
-
-              case 'contactMessage':
-                content = msg.message.contactMessage?.displayName || '';
-                msgType = 'msg_contact';
-                mediaInfo = {
-                  displayName: msg.message.contactMessage?.displayName,
-                  vcard: msg.message.contactMessage?.vcard
-                };
-                break;
-
-              default:
-                content = JSON.stringify(msg.message);
-                msgType = 'msg_other';
-                console.log(`Unhandled message type: ${messageType}`);
-            }
-
-            // 构建消息数据
-            const messageData = {
-              accountId,
-              accountPhone: account.phoneNumber,
-              messageId: msg.key.id,
-              remoteJid: msg.key.remoteJid,
-              remoteJidAlt: msg.key.remoteJidAlt,
-              fromMe: msg.key.fromMe,
-              timestamp: msg.messageTimestamp,
-              pushName: msg.pushName,
-              message: msg.message,
-              participant: msg.key.participant,
-              content: content,
-              MessageType: msgType,
-              mediaInfo: mediaInfo,
-              originalMessageType: messageType
-            };
-
-            // 发布消息到 NATS
-            await nats.publishMessage(`msgs`, messageData);
-            await redisStorage.saveMessage(messageData);
-            // logger.info(`${msgType} message published to NATS: ${msg.key.id}`);
-
-            // 标记消息为已读（如果不是自己发送的消息）
-            if(!msg.key.fromMe ) {// && !isJidNewsletter(msg.key?.remoteJid)
-              await sock.readMessages([msg.key])
-            }
-          } catch(error) {
-            logger.error(`Error processing message3: ${error}`);
-          }
-        }
-        // Process incoming messages
-        // This would be implemented in your message service
-      }
+    // 发布到 NATS
+    await nats.publishMessage('msgs', messageData);
+    
+    // 保存到 Redis
+    await redisStorage.saveMessage({
+      accountId,
+      accountPhone,
+      messageId: msg.key.id,
+      remoteJid: msg.key.remoteJid,
+      fromMe: msg.key.fromMe || false,
+      timestamp: msg.messageTimestamp,
+      pushName: msg.pushName,
+      participant: msg.key.participant,
+      content: extractMessageContent(msg.message),
+      MessageType: messageType,
+      originalMessageType: messageType,
+      message: msg.message
     });
 
-    // Store connection in map
-    
-    try{
-      let result=await promise;
-      console.log("result:",result);
-      connections.set(accountId, result.sock);
-      return result;
-    }catch(error){
-      logger.error(`Error creating WhatsApp connection for ${accountId} return null:`, error);
-      return {status:500,sock:null};
+    // 标记为已读（非自己发送的消息，且非广播/通知类）
+    if (!msg.key.fromMe && msg.key.remoteJid && !isJidNewsletter(msg.key.remoteJid)) {
+      await sock.readMessages([msg.key]);
     }
     
+    logger.debug(`[${accountId}] 消息处理完成: ${msg.key.id}`);
+    
   } catch (error) {
-    logger.error(`Error creating WhatsApp connection for ${accountId}:`, error);
-    return {status:500,sock:null};
+    logger.error(`[${accountId}] 处理消息失败:`, error);
   }
 }
 
-async function GetAccountStateFromConnection(idorphone){
-  const sockstatus=connections.get(idorphone);
-  return sockstatus;
+/**
+ * 判断是否为 Newsletter JID
+ */
+function isJidNewsletter(jid) {
+  return jid && jid.includes('@newsletter');
 }
-async function getConnection(idorphone,callbackfun=null) {
-  if (connections.has(idorphone)) {
-    return connections.get(idorphone);
+
+/**
+ * 提取消息内容
+ */
+function extractMessageContent(message) {
+  if (!message) return '';
+  const type = getContentType(message);
+  const msg = message[type];
+  if (!msg) return '';
+  
+  if (msg.caption) return msg.caption;
+  if (msg.text) return msg.text;
+  if (msg.conversation) return msg.conversation;
+  if (msg.displayName) return msg.displayName;
+  if (msg.name) return msg.name;
+  if (msg.title) return msg.title;
+  
+  return JSON.stringify(msg);
+}
+
+/**
+ * 处理消息状态更新
+ */
+async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
+  for (const update of updates || []) {
+    try {
+      const { key, update: statusUpdate } = update;
+      
+      // 只关注状态: 3(已送达), 4(已读)
+      if (statusUpdate.status !== 3 && statusUpdate.status !== 4) {
+        continue;
+      }
+      
+      const statusMap = { 3: 'delivery_ack', 4: 'read' };
+      const receiptData = {
+        accountId,
+        accountPhone,
+        messageId: key.id,
+        remoteJid: key.remoteJid,
+        fromMe: key.fromMe || false,
+        receipt: statusMap[statusUpdate.status] || `unknown(${statusUpdate.status})`,
+        receiptTimestamp: statusUpdate.messageTimestamp || Math.floor(Date.now() / 1000),
+        participant: key.participant || null,
+        MessageType: 'msg_status_update',
+        statusCode: statusUpdate.status
+      };
+
+      await nats.publishMessage('msgs', receiptData);
+      
+      // 更新 Redis 中的消息状态
+      await redisStorage.updateMessageStatus(key.id, receiptData.receipt);
+      
+      logger.debug(`[${accountId}] 消息状态更新: ${key.id} -> ${receiptData.receipt}`);
+      
+    } catch (error) {
+      logger.error(`[${accountId}] 处理消息状态更新失败:`, error);
+    }
+  }
+}
+
+/**
+ * 处理消息回执更新
+ */
+async function handleMessageReceiptUpdate(updates, accountId, accountPhone) {
+  for (const update of updates || []) {
+    try {
+      const receiptData = {
+        accountId,
+        accountPhone,
+        remoteJid: update.remoteJid,
+        fromMe: update.fromMe || false,
+        receiptType: update.type, // read, delivered, etc.
+        receiptTimestamp: update.timestamp || Math.floor(Date.now() / 1000),
+        participant: update.participant || null,
+        MessageType: 'msg_receipt_update'
+      };
+
+      await nats.publishMessage('msgs', receiptData);
+      logger.debug(`[${accountId}] 回执更新: ${update.type} for ${update.remoteJid}`);
+      
+    } catch (error) {
+      logger.error(`[${accountId}] 处理回执更新失败:`, error);
+    }
+  }
+}
+
+/**
+ * 获取连接
+ * @param {string} identifier - 账号ID或手机号
+ * @param {Function} callback - 连接成功回调
+ * @returns {Promise<Object>} - Socket 连接对象
+ */
+async function getConnection(identifier, callback = null) {
+  // 检查是否已有连接
+  if (connections.has(identifier)) {
+    const sock = connections.get(identifier);
+    // 检查连接是否仍然有效
+    if (sock && sock.user) {
+      return sock;
+    }
+    // 连接无效，删除并重新创建
+    connections.delete(identifier);
   }
 
-  // Use deferred require to avoid circular dependency
+  // 获取账号信息
   const accountService = require('../account');
-
-  let account = await accountService.getAccountByPhoneNumberOrId(idorphone);
+  let account = await accountService.getAccountByPhoneNumberOrId(identifier);
 
   if (!account) {
+    logger.error(`[${identifier}] 账号不存在`);
     return null;
   }
+
+  // 如果已有该账号的连接，直接返回
   if (connections.has(account.id)) {
     return connections.get(account.id);
   }
 
-  const {sock}=await createConnection(account,callbackfun);
-  return sock;
-}
-async function fetchMessageHistory(idorphone,chatId,limit){
-  const sock=await getConnection(idorphone);
-  if(!sock){
-    return null;
+  // 创建新连接
+  const result = await createConnection(account, callback);
+  if (result && result.status === 'connected') {
+    return result.sock;
   }
-  //const msg = await getOldestMessageInChat(jid)
-  let tmp=await sock.fetchMessageHistory(chatId,limit);
-  console.log('tmp:',tmp);
-  return tmp;
-}
-
-async function intervalStopIdelConnection(){
-  const now = new Date();
-  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-
-  logger.info(`Checking for idle connections older than ${oneHourAgo.toISOString()}`);
-
-  // Iterate through all connections
-  for (const [accountId, sock] of connections.entries()) {
-    // Check if the connection has lastActiveTime property and if it's older than 1 hour
-    if (sock.lastActiveTime && sock.lastActiveTime < oneHourAgo) {
-      logger.info(`Closing idle connection for account ${accountId}. Last active: ${sock.lastActiveTime.toISOString()}`);
-      await closeConnection(accountId);
-    }
-  }
+  
+  logger.error(`[${account.id}] 连接创建失败: ${result?.error || '未知错误'}`);
+  return null;
 }
 
 /**
- * Close a WhatsApp connection
- * @param {string} accountId - The unique account ID
+ * 关闭连接
+ * @param {string} accountId - 账号ID
  */
 async function closeConnection(accountId) {
   if (connections.has(accountId)) {
-    try{
+    try {
       const sock = connections.get(accountId);
-      sock.end();
+      if (sock && typeof sock.end === 'function') {
+        await sock.end();
+      }
       connections.delete(accountId);
-    }catch(error){
-      logger.error(`Error closing connection for ${accountId}:`, error);
+      logger.info(`[${accountId}] 连接已关闭`);
+      return true;
+    } catch (error) {
+      logger.error(`[${accountId}] 关闭连接失败:`, error);
+      connections.delete(accountId);
+      return false;
     }
-
-
-
-    logger.info(`Connection closed for ${accountId}`);
   }
-}
-
-async function CloseConnection(idorphone){
-  if (connections.has(idorphone)) {
-    const sock = connections.get(idorphone);
-    sock.end();
-    connections.delete(idorphone);
-  }
+  return false;
 }
 
 /**
- * Get all active connections
- * @returns {Map} - Map of all active connections
+ * 获取连接状态
+ * @param {string} accountId - 账号ID
+ * @returns {string|null} - 连接状态
+ */
+function getConnectionStatus(accountId) {
+  const sock = connections.get(accountId);
+  if (!sock) return null;
+  return sock.account_status || 'unknown';
+}
+
+/**
+ * 获取所有连接
+ * @returns {Map} - 所有连接
  */
 function getAllConnections() {
   return connections;
+}
+
+/**
+ * 清理空闲连接（定时任务调用）
+ */
+async function intervalStopIdelConnection() {
+  const now = new Date();
+  const idleTimeout = 60 * 60 * 1000; // 1小时
+  const oneHourAgo = new Date(now.getTime() - idleTimeout);
+
+  let closedCount = 0;
+  for (const [accountId, sock] of connections.entries()) {
+    if (sock.lastActiveTime && sock.lastActiveTime < oneHourAgo) {
+      logger.info(`[${accountId}] 关闭空闲连接，最后活动时间: ${sock.lastActiveTime.toISOString()}`);
+      await closeConnection(accountId);
+      closedCount++;
+    }
+  }
+  
+  if (closedCount > 0) {
+    logger.info(`已关闭 ${closedCount} 个空闲连接`);
+  }
+  
+  return closedCount;
 }
 
 module.exports = {
   createConnection,
   getConnection,
   closeConnection,
-  CloseConnection,
   getAllConnections,
+  getConnectionStatus,
   intervalStopIdelConnection,
-  GetAccountStateFromConnection
+  LOGIN_STATUS
 };
