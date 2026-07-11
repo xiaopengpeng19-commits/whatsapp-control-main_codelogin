@@ -668,6 +668,7 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       if (chatId && !isJidNewsletter(chatId)) {
         await markChatAsRead(sock, accountId, chatId);
       }
+      logger.error(`[${accountId}] 自己发送的消息 handleIncomingMessage失败`);
       return;
     }
     
