@@ -546,12 +546,15 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
                 continue;
               }
 
+              logger.debug(`[${accountId}] 插入消息`);
               await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
               
             } catch (error) {
               logger.error(`[${accountId}] 处理消息失败:`, error);
             }
           }
+        }else{
+          logger.debug(`[${accountId}] 消息更新: type=${upsert.type}`);
         }
       }
 
