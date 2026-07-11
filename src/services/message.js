@@ -1,6 +1,6 @@
 // message.js - 修改所有方法返回统一格式
 const redisStorage = require("../services/redisStorage");
-const { getConnection,markChatAsRead } = require("./baileys/connect");
+const { getConnection } = require("./baileys/connect");  // 移除 markChatAsRead
 const logger = require("../utils/logger");
 
 const { Buffer } = require("node:buffer");
@@ -49,17 +49,6 @@ class MessageService {
    */
   async sendMessageWTyping(sock, jid, msg, DeleteForMe = false) {
     const targetJid = normalizeJid(jid);
-
-
-    // ========== 核心：发送消息前先已读该会话 ==========
-    try {
-      await markChatAsRead(sock, jid, targetJid);
-      logger.debug(`[${jid}] 发送前已读会话: ${targetJid}`);
-    } catch (readError) {
-      // 已读失败不影响发送，只记录日志
-      logger.warn(`[${jid}] 已读会话失败: ${targetJid}`, readError.message);
-    }
-
     await sock.presenceSubscribe(targetJid);
     await delay(500);
     await sock.sendPresenceUpdate("composing", targetJid);
@@ -251,17 +240,6 @@ class MessageService {
     }
 
     let toid = normalizeJid(to);
-
-    // ========== 核心：发送消息前先已读该会话 ==========
-    try {
-      
-      await markChatAsRead(sock, accountId, toid);
-      logger.debug(`[${accountId}] 发送前已读会话: ${toid}`);
-    } catch (readError) {
-      // 已读失败不影响发送，只记录日志
-      logger.warn(`[${accountId}] 已读会话失败: ${toid}`, readError.message);
-    }
-
     try {
       const formattedButtons = buttons.map(btn => {
         if (btn.name && btn.buttonParamsJson) {
