@@ -519,9 +519,9 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     const chatId = msg.key.remoteJid;
     
     // 如果是自己发送的消息，不处理
-    if (msg.key.fromMe) {
-      return;
-    }
+    // if (msg.key.fromMe) {
+    //   return;
+    // }
     
     // 构建消息数据
     const content = extractMessageContent(msg.message);
