@@ -525,6 +525,10 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     
     // 构建消息数据
     const content = extractMessageContent(msg.message);
+    // ========== 添加调试日志 ==========
+    console.log(`[${accountId}] 原始消息内容:`, JSON.stringify(content));
+    console.log(`[${accountId}] 内容类型:`, typeof content);
+    console.log(`[${accountId}] 内容长度:`, content.length);
     
     const messageData = {
       accountId,
