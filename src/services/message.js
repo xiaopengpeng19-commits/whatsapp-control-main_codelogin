@@ -1,6 +1,6 @@
 // message.js - 修改所有方法返回统一格式
 const redisStorage = require("../services/redisStorage");
-const { getConnection } = require("./baileys/connect");
+const { getConnection,markChatAsRead } = require("./baileys/connect");
 const logger = require("../utils/logger");
 
 const { Buffer } = require("node:buffer");
