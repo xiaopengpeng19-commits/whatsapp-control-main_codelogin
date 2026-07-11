@@ -176,7 +176,79 @@ function cleanupUnreadCache() {
 // 每小时清理一次
 setInterval(cleanupUnreadCache, 60 * 60 * 1000);
 
-// ========== 核心函数 ==========
+// ========== 辅助函数 ==========
+
+/**
+ * 判断是否为 Newsletter JID
+ */
+function isJidNewsletter(jid) {
+  return jid && jid.includes('@newsletter');
+}
+
+/**
+ * 提取消息内容
+ */
+function extractMessageContent(message) {
+  if (!message) return '';
+  const type = getContentType(message);
+  const msg = message[type];
+  if (!msg) return '';
+  
+  if (msg.caption) return msg.caption;
+  if (msg.text) return msg.text;
+  if (msg.conversation) return msg.conversation;
+  if (msg.displayName) return msg.displayName;
+  if (msg.name) return msg.name;
+  if (msg.title) return msg.title;
+  
+  return JSON.stringify(msg);
+}
+
+/**
+ * 更新账号状态到 Redis
+ */
+async function updateAccountStatus(accountId, phoneNumber, status) {
+  try {
+    const accountData = {
+      id: accountId,
+      phoneNumber: phoneNumber || null,
+      socket_status: status,
+      account_status: status === LOGIN_STATUS.CONNECTED ? 'normal' : status,
+      lastActive: new Date().toISOString()
+    };
+    
+    const existing = await redisStorage.getAccountById(accountId);
+    if (existing) {
+      await redisStorage.updateAccount(accountId, accountData);
+    } else {
+      await redisStorage.upsertAccount(accountData);
+    }
+  } catch (error) {
+    logger.error(`[${accountId}] 更新账号状态失败:`, error);
+  }
+}
+
+/**
+ * 清理会话文件
+ */
+async function cleanupSession(accountId) {
+  try {
+    const sessionDir = `./storage/sessions/${accountId}`;
+    if (fs.existsSync(sessionDir)) {
+      const files = fs.readdirSync(sessionDir);
+      if (files.length === 0) {
+        fs.rmdirSync(sessionDir);
+        logger.info(`[${accountId}] 清理空会话目录`);
+      } else {
+        logger.info(`[${accountId}] 会话目录非空，保留: ${files.length} 个文件`);
+      }
+    }
+  } catch (error) {
+    logger.error(`[${accountId}] 清理会话失败:`, error);
+  }
+}
+
+// ========== 核心函数：创建连接 ==========
 
 /**
  * 创建 WhatsApp 连接
@@ -279,11 +351,13 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     // ---------- 统一事件处理 ----------
     sock.ev.process(async (events) => {
       
+      // 凭证更新
       if (events['creds.update']) {
         await saveCreds();
         logger.debug(`[${accountId}] 凭证已保存`);
       }
 
+      // 连接更新
       if (events['connection.update']) {
         const update = events['connection.update'];
         const { connection, lastDisconnect, qr } = update;
@@ -362,7 +436,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             await updateAccountStatus(accountId, account.phoneNumber, status);
             
             await cleanupSession(accountId);
-            // 清理未读缓存
             unreadMessagesMap.delete(accountId);
             connections.delete(accountId);
             
@@ -403,7 +476,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // 处理消息历史同步
+      // 消息历史同步
       if (events['messaging-history.set']) {
         const { chats, contacts, messages, isLatest, progress, syncType } = events['messaging-history.set'];
         logger.debug({
@@ -445,7 +518,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // 处理新消息
+      // 新消息
       if (events['messages.upsert']) {
         const upsert = events['messages.upsert'];
         logger.debug(`[${accountId}] 消息更新: type=${upsert.type}`);
@@ -473,7 +546,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
                 continue;
               }
 
-              // 处理消息（不立即已读）
               await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
               
             } catch (error) {
@@ -483,19 +555,19 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // 处理消息状态更新
+      // 消息状态更新
       if (events['messages.update']) {
         logger.debug(`[${accountId}] 消息状态更新:`, events['messages.update']);
         await handleMessageStatusUpdate(events['messages.update'], accountId, account.phoneNumber);
       }
 
-      // 处理消息回执
+      // 消息回执
       if (events['message-receipt.update']) {
         logger.debug(`[${accountId}] 消息回执更新:`, events['message-receipt.update']);
         await handleMessageReceiptUpdate(events['message-receipt.update'], accountId, account.phoneNumber);
       }
 
-      // 处理聊天更新
+      // 聊天更新
       if (events['chats.upsert']) {
         const chats = events['chats.upsert'];
         logger.debug(`[${accountId}] 聊天更新: ${chats?.length || 0} 个`);
@@ -518,7 +590,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // 处理群组更新
+      // 群组更新
       if (events['groups.update']) {
         for (const event of events['groups.update'] || []) {
           try {
@@ -578,77 +650,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
   }
 }
 
-/**
- * 更新账号状态到 Redis
- */
-async function updateAccountStatus(accountId, phoneNumber, status) {
-  try {
-    const accountData = {
-      id: accountId,
-      phoneNumber: phoneNumber || null,
-      socket_status: status,
-      account_status: status === LOGIN_STATUS.CONNECTED ? 'normal' : status,
-      lastActive: new Date().toISOString()
-    };
-    
-    const existing = await redisStorage.getAccountById(accountId);
-    if (existing) {
-      await redisStorage.updateAccount(accountId, accountData);
-    } else {
-      await redisStorage.upsertAccount(accountData);
-    }
-  } catch (error) {
-    logger.error(`[${accountId}] 更新账号状态失败:`, error);
-  }
-}
-
-/**
- * 清理会话文件
- */
-async function cleanupSession(accountId) {
-  try {
-    const sessionDir = `./storage/sessions/${accountId}`;
-    if (fs.existsSync(sessionDir)) {
-      const files = fs.readdirSync(sessionDir);
-      if (files.length === 0) {
-        fs.rmdirSync(sessionDir);
-        logger.info(`[${accountId}] 清理空会话目录`);
-      } else {
-        logger.info(`[${accountId}] 会话目录非空，保留: ${files.length} 个文件`);
-      }
-    }
-  } catch (error) {
-    logger.error(`[${accountId}] 清理会话失败:`, error);
-  }
-}
-
 // ========== 消息处理函数 ==========
-
-/**
- * 判断是否为 Newsletter JID
- */
-function isJidNewsletter(jid) {
-  return jid && jid.includes('@newsletter');
-}
-
-/**
- * 提取消息内容
- */
-function extractMessageContent(message) {
-  if (!message) return '';
-  const type = getContentType(message);
-  const msg = message[type];
-  if (!msg) return '';
-  
-  if (msg.caption) return msg.caption;
-  if (msg.text) return msg.text;
-  if (msg.conversation) return msg.conversation;
-  if (msg.displayName) return msg.displayName;
-  if (msg.name) return msg.name;
-  if (msg.title) return msg.title;
-  
-  return JSON.stringify(msg);
-}
 
 /**
  * 处理接收到的消息（不立即已读，只缓存）
@@ -816,7 +818,7 @@ async function getConnection(identifier, callback = null) {
 }
 
 /**
- * 关闭连接
+ * 关闭连接（通过 accountId）
  * @param {string} accountId - 账号ID
  * @returns {Promise<boolean>} - 是否成功
  */
@@ -828,7 +830,6 @@ async function closeConnection(accountId) {
         await sock.end();
       }
       connections.delete(accountId);
-      // 清理未读缓存
       unreadMessagesMap.delete(accountId);
       logger.info(`[${accountId}] 连接已关闭，未读缓存已清理`);
       return true;
@@ -839,6 +840,28 @@ async function closeConnection(accountId) {
       return false;
     }
   }
+  return false;
+}
+
+/**
+ * 关闭连接（通过 accountId 或 phoneNumber）- 兼容旧接口
+ * @param {string} idOrPhone - 账号ID或手机号
+ * @returns {Promise<boolean>} - 是否成功
+ */
+async function CloseConnection(idOrPhone) {
+  // 尝试直接通过 ID 查找
+  if (connections.has(idOrPhone)) {
+    return await closeConnection(idOrPhone);
+  }
+  
+  // 如果没找到，尝试通过 phoneNumber 查找
+  const accountService = require('../account');
+  const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
+  if (account && connections.has(account.id)) {
+    return await closeConnection(account.id);
+  }
+  
+  logger.warn(`[${idOrPhone}] 未找到对应的活动连接`);
   return false;
 }
 
@@ -889,7 +912,7 @@ async function intervalStopIdelConnection() {
 // ========== 外部 API ==========
 
 /**
- * 手动标记会话为已读（供外部调用）
+ * 手动标记会话为已读（供外部调用，带连接检查）
  * @param {string} accountId - 账号ID
  * @param {string} chatId - 会话ID
  * @returns {Promise<number>} - 已读消息数量
@@ -931,16 +954,25 @@ function getUnreadMessages(accountId, chatId) {
 // ========== 模块导出 ==========
 
 module.exports = {
+  // 连接创建
   createConnection,
   getConnection,
-  closeConnection,
+  
+  // 连接关闭（两个版本）
+  closeConnection,      // 通过 accountId
+  CloseConnection,      // 通过 idOrPhone（兼容旧接口）
+  
+  // 连接管理
   getAllConnections,
   getConnectionStatus,
   intervalStopIdelConnection,
+  
+  // 常量
   LOGIN_STATUS,
+  
   // 未读消息管理
-  markChatRead,
+  markChatAsRead,       // 核心函数（需要 sock 参数）
+  markChatRead,         // 对外 API（带连接检查）
   getUnreadStats,
   getUnreadMessages,
-  
 };
