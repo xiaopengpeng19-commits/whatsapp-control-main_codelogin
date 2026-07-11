@@ -64,6 +64,14 @@ function extractMessageContent(message) {
   const type = getContentType(message);
   const msg = message[type];
   if (!msg) return '';
+
+  // ========== 打印原始值 ==========
+  console.log('=== extractMessageContent ===');
+  console.log('type:', type);
+  console.log('msg.conversation:', msg.conversation);
+  console.log('msg.text:', msg.text);
+  console.log('msg.caption:', msg.caption);
+  console.log('typeof msg.conversation:', typeof msg.conversation);
   
   if (msg.caption) return msg.caption;
   if (msg.text) return msg.text;
@@ -525,10 +533,7 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     
     // 构建消息数据
     const content = extractMessageContent(msg.message);
-    // ========== 添加调试日志 ==========
-    console.log(`[${accountId}] 原始消息内容:`, JSON.stringify(content));
-    console.log(`[${accountId}] 内容类型:`, typeof content);
-    console.log(`[${accountId}] 内容长度:`, content.length);
+    
     
     const messageData = {
       accountId,
