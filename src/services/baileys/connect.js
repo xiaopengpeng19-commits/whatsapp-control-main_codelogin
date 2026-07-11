@@ -530,6 +530,19 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     if (msg.key.fromMe) {
       return;
     }
+
+    // ========== 打印完整的 msg ==========
+    console.log('[handleIncomingMessage] 完整 msg:', JSON.stringify(msg, null, 2));
+    console.log('[handleIncomingMessage] msg.message:', JSON.stringify(msg.message, null, 2));
+    console.log('[handleIncomingMessage] msg.message 的 keys:', Object.keys(msg.message || {}));
+    
+    // ========== 打印 msg.message 的每个字段 ==========
+    if (msg.message) {
+      for (const key of Object.keys(msg.message)) {
+        console.log(`[handleIncomingMessage] msg.message.${key}:`, msg.message[key]);
+        console.log(`[handleIncomingMessage] msg.message.${key} 的类型:`, typeof msg.message[key]);
+      }
+    }
     
     // 构建消息数据
     const content = extractMessageContent(msg.message);
