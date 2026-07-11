@@ -64,23 +64,12 @@ function extractMessageContent(message) {
   const type = getContentType(message);
   const msg = message[type];
   if (!msg) return '';
-
-  // ========== 打印原始值 ==========
-  console.log('=== extractMessageContent ===');
-  console.log('type:', type);
-  console.log('msg.conversation:', msg.conversation);
-  console.log('msg.text:', msg.text);
-  console.log('msg.caption:', msg.caption);
-  console.log('typeof msg.conversation:', typeof msg.conversation);
   
-  if (msg.caption) return msg.caption;
-  if (msg.text) return msg.text;
-  if (msg.conversation) return msg.conversation;
-  if (msg.displayName) return msg.displayName;
-  if (msg.name) return msg.name;
-  if (msg.title) return msg.title;
+  // 如果 msg 是字符串，直接返回
+  if (typeof msg === 'string') return msg;
   
-  return JSON.stringify(msg);
+  // 如果 msg 是对象，提取内容
+  return msg.caption || msg.text || msg.conversation || msg.displayName || msg.name || msg.title || '';
 }
 
 /**
