@@ -1,5 +1,5 @@
 // services/baileys/connect.js
-const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState, DisconnectReason, getContentType, Browsers, makeCacheableSignalKeyStore, generateMessageIDV2, proto } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState, DisconnectReason, getContentType, Browsers, makeCacheableSignalKeyStore, proto } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +10,7 @@ const snowflake = require('../../utils/snowflake');
 const redisStorage = require('../redisStorage');
 const nats = require('../../config/nats');
 
-// 创建日志记录器 - 参考官方示例
+// 创建日志记录器
 const logger = P({
   level: process.env.LOG_LEVEL || 'trace',
   transport: {
@@ -33,7 +33,7 @@ const logger = P({
 const connections = new Map();
 const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
 
-// 消息重试计数器缓存 - 参考官方示例
+// 消息重试计数器缓存
 const msgRetryCounterCache = new NodeCache();
 
 // 登录状态常量
@@ -46,6 +46,137 @@ const LOGIN_STATUS = {
   EXPIRED: 'expired',
   BANNED: 'banned'
 };
+
+// ========== 未读消息管理 ==========
+
+// 每个账号的未读消息缓存: accountId -> Map(chatId -> [messageKeys])
+const unreadMessagesMap = new Map();
+
+/**
+ * 获取账号的未读消息缓存
+ * @param {string} accountId - 账号ID
+ * @returns {Map} - 会话ID -> 消息key数组的映射
+ */
+function getUnreadCache(accountId) {
+  if (!unreadMessagesMap.has(accountId)) {
+    unreadMessagesMap.set(accountId, new Map());
+  }
+  return unreadMessagesMap.get(accountId);
+}
+
+/**
+ * 添加未读消息到缓存
+ * @param {string} accountId - 账号ID
+ * @param {string} chatId - 会话ID
+ * @param {Object} msgKey - 消息key
+ */
+function addUnreadMessage(accountId, chatId, msgKey) {
+  const cache = getUnreadCache(accountId);
+  if (!cache.has(chatId)) {
+    cache.set(chatId, []);
+  }
+  cache.get(chatId).push(msgKey);
+  
+  // 限制每个会话的未读消息数量，防止内存溢出
+  const messages = cache.get(chatId);
+  if (messages.length > 1000) {
+    messages.splice(0, messages.length - 1000);
+  }
+  
+  logger.debug(`[${accountId}] 添加未读消息: ${chatId}, 总数: ${messages.length}`);
+}
+
+/**
+ * 获取会话的未读消息数量
+ * @param {string} accountId - 账号ID
+ * @param {string} chatId - 会话ID
+ * @returns {number} - 未读消息数量
+ */
+function getUnreadCount(accountId, chatId) {
+  const cache = getUnreadCache(accountId);
+  if (!cache.has(chatId)) return 0;
+  return cache.get(chatId).length;
+}
+
+/**
+ * 标记会话的所有消息为已读（用户发送消息时触发）
+ * @param {Object} sock - Socket连接
+ * @param {string} accountId - 账号ID
+ * @param {string} chatId - 会话ID
+ * @param {boolean} force - 是否强制已读（即使没有未读消息）
+ * @returns {Promise<number>} - 已读的消息数量
+ */
+async function markChatAsRead(sock, accountId, chatId, force = false) {
+  const cache = getUnreadCache(accountId);
+  
+  if (!cache.has(chatId)) {
+    if (force) {
+      // 强制已读：只读最新的一条消息（模拟打开聊天）
+      try {
+        await sock.readMessages([{ remoteJid: chatId }]);
+        logger.debug(`[${accountId}] 强制已读会话: ${chatId}`);
+        return 1;
+      } catch (error) {
+        logger.warn(`[${accountId}] 强制已读失败: ${chatId}`, error.message);
+        return 0;
+      }
+    }
+    return 0;
+  }
+  
+  const keys = cache.get(chatId);
+  if (keys.length === 0) return 0;
+  
+  try {
+    // 批量已读所有未读消息
+    await sock.readMessages(keys);
+    const count = keys.length;
+    
+    // 清空已读的消息
+    cache.set(chatId, []);
+    
+    logger.info(`[${accountId}] 已读会话 ${chatId} 的 ${count} 条消息 (触发: 用户发送消息)`);
+    
+    // 发布已读事件到 NATS
+    await nats.publishMessage('msgs', {
+      accountId,
+      chatId,
+      readCount: count,
+      eventType: 'chat_read_on_send',
+      timestamp: new Date().toISOString()
+    });
+    
+    return count;
+  } catch (error) {
+    logger.error(`[${accountId}] 标记已读失败: ${chatId}`, error);
+    return 0;
+  }
+}
+
+/**
+ * 清理未读缓存（定时任务）
+ */
+function cleanupUnreadCache() {
+  for (const [accountId, cache] of unreadMessagesMap) {
+    let hasData = false;
+    for (const [chatId, messages] of cache) {
+      if (messages.length > 100) {
+        cache.set(chatId, messages.slice(-50));
+      }
+      if (messages.length > 0) {
+        hasData = true;
+      }
+    }
+    if (!hasData) {
+      unreadMessagesMap.delete(accountId);
+    }
+  }
+}
+
+// 每小时清理一次
+setInterval(cleanupUnreadCache, 60 * 60 * 1000);
+
+// ========== 核心函数 ==========
 
 /**
  * 创建 WhatsApp 连接
@@ -79,11 +210,9 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       logger.error(`[${accountId}] 创建会话目录失败:`, error);
     }
 
-    // 获取最新版本 - 参考官方示例
     const { version, isLatest } = await fetchLatestBaileysVersion();
     logger.debug({ version: version.join('.'), isLatest }, `[${accountId}] 使用最新 WA 版本`);
 
-    // 加载认证状态
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     
     // 代理配置
@@ -97,7 +226,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       }
     }
 
-    // 创建 socket - 参考官方示例配置
+    // 创建 socket
     const sock = makeWASocket({
       version,
       logger,
@@ -112,13 +241,10 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
       browser: Browsers.macOS("Google Chrome"),
-      // getMessage 实现 - 用于消息重试和占位符重新发送
       getMessage: async (key) => {
         try {
-          // 从 Redis 获取消息
           const stored = await redisStorage.getMessageById(key.id);
           if (stored && stored.message) {
-            // 如果是字符串，尝试解析为对象
             if (typeof stored.message === 'string') {
               try {
                 return JSON.parse(stored.message);
@@ -128,7 +254,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             }
             return stored.message;
           }
-          // 如果找不到，返回一个空消息
           return proto.Message.create({ conversation: '' });
         } catch (error) {
           logger.error(`[${accountId}] getMessage 失败:`, error);
@@ -137,7 +262,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       }
     });
 
-    // 设置初始状态
     sock.account_status = LOGIN_STATUS.CONNECTING;
     sock.lastActiveTime = new Date();
 
@@ -152,23 +276,21 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       }
     }, timeoutDuration);
 
-    // ---------- 使用 process 方法统一处理所有事件 (参考官方示例) ----------
+    // ---------- 统一事件处理 ----------
     sock.ev.process(async (events) => {
       
-      // 处理凭证更新
       if (events['creds.update']) {
         await saveCreds();
         logger.debug(`[${accountId}] 凭证已保存`);
       }
 
-      // 处理连接更新
       if (events['connection.update']) {
         const update = events['connection.update'];
         const { connection, lastDisconnect, qr } = update;
 
         logger.debug(`[${accountId}] 连接更新:`, update);
 
-        // --- 处理配对码登录 (参考官方示例逻辑) ---
+        // 处理配对码登录
         if (qr && usePairCode && !sock.authState.creds.registered) {
           const phoneNumber = account.phoneNumber;
           if (!phoneNumber) {
@@ -182,10 +304,8 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             const code = await sock.requestPairingCode(phoneNumber);
             logger.info(`[${accountId}] 配对码生成成功: ${code}`);
             
-            // 更新账号状态
             await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE);
             
-            // 返回配对码
             if (resolveFunc) {
               resolveFunc({
                 status: 'waiting_pair_code',
@@ -203,7 +323,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           return;
         }
 
-        // --- 处理二维码登录 ---
+        // 处理二维码登录
         if (qr && !usePairCode) {
           logger.info(`[${accountId}] QR码已生成`);
           await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR);
@@ -217,13 +337,12 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           }
         }
 
-        // --- 处理连接关闭 (参考官方示例重连逻辑) ---
+        // 处理连接关闭
         if (connection === 'close') {
           const statusCode = (lastDisconnect?.error instanceof Boom) 
             ? lastDisconnect.error?.output?.statusCode 
             : null;
           
-          // 如果不是登出状态，尝试重连
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut 
             && statusCode !== 403 
             && lastDisconnect?.error?.message !== 'QR refs attempts ended';
@@ -232,20 +351,19 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
           if (shouldReconnect && retryCount > 0) {
             logger.info(`[${accountId}] 剩余重试次数: ${retryCount}`);
-            // 递归重试
             const result = await createConnection(account, onConnected, retryCount - 1, usePairCode);
             if (result && resolveFunc) {
               resolveFunc(result);
             }
             return;
           } else {
-            // 连接失败，设置状态
             const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
             sock.account_status = status;
             await updateAccountStatus(accountId, account.phoneNumber, status);
             
-            // 清理会话
             await cleanupSession(accountId);
+            // 清理未读缓存
+            unreadMessagesMap.delete(accountId);
             connections.delete(accountId);
             
             if (rejectFunc) {
@@ -254,22 +372,18 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           }
         }
 
-        // --- 处理连接成功 ---
+        // 处理连接成功
         if (connection === 'open') {
           const phoneNumber = sock.user?.id?.split(':')[0];
           account.phoneNumber = phoneNumber;
           sock.account_status = LOGIN_STATUS.CONNECTED;
           sock.lastActiveTime = new Date();
 
-          // 更新账号信息
           await updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED);
-          
-          // 存储连接
           connections.set(accountId, sock);
 
           logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
 
-          // 执行回调
           if (onConnected) {
             try {
               await onConnected(sock);
@@ -278,7 +392,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             }
           }
 
-          // 通知登录成功
           if (resolveFunc) {
             resolveFunc({
               status: 'connected',
@@ -290,7 +403,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // ---------- 处理消息历史同步 (参考官方示例) ----------
+      // 处理消息历史同步
       if (events['messaging-history.set']) {
         const { chats, contacts, messages, isLatest, progress, syncType } = events['messaging-history.set'];
         logger.debug({
@@ -303,7 +416,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }, `[${accountId}] 消息历史同步`);
 
         try {
-          // 保存聊天
           for (const chat of chats || []) {
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
@@ -317,7 +429,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             });
           }
 
-          // 保存联系人
           for (const contact of contacts || []) {
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
@@ -334,12 +445,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // ---------- 处理新消息 (参考官方示例) ----------
+      // 处理新消息
       if (events['messages.upsert']) {
         const upsert = events['messages.upsert'];
         logger.debug(`[${accountId}] 消息更新: type=${upsert.type}`);
 
-        // 处理占位符重发请求
         if (!!upsert.requestId) {
           logger.debug(`[${accountId}] 占位符请求消息接收:`, upsert.requestId);
         }
@@ -349,7 +459,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           
           for (const msg of upsert.messages || []) {
             try {
-              // 处理特殊命令 (参考官方示例)
               const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
               
               if (text === 'requestPlaceholder' && !upsert.requestId) {
@@ -364,7 +473,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
                 continue;
               }
 
-              // 正常消息处理
+              // 处理消息（不立即已读）
               await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
               
             } catch (error) {
@@ -374,19 +483,19 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // ---------- 处理消息状态更新 ----------
+      // 处理消息状态更新
       if (events['messages.update']) {
         logger.debug(`[${accountId}] 消息状态更新:`, events['messages.update']);
         await handleMessageStatusUpdate(events['messages.update'], accountId, account.phoneNumber);
       }
 
-      // ---------- 处理消息回执 ----------
+      // 处理消息回执
       if (events['message-receipt.update']) {
         logger.debug(`[${accountId}] 消息回执更新:`, events['message-receipt.update']);
         await handleMessageReceiptUpdate(events['message-receipt.update'], accountId, account.phoneNumber);
       }
 
-      // ---------- 处理聊天更新 ----------
+      // 处理聊天更新
       if (events['chats.upsert']) {
         const chats = events['chats.upsert'];
         logger.debug(`[${accountId}] 聊天更新: ${chats?.length || 0} 个`);
@@ -409,7 +518,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // ---------- 处理群组更新 ----------
+      // 处理群组更新
       if (events['groups.update']) {
         for (const event of events['groups.update'] || []) {
           try {
@@ -432,37 +541,30 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // ---------- 其他事件日志 ----------
+      // 其他事件日志
       if (events['labels.association']) {
         logger.debug(`[${accountId}] 标签关联事件`);
       }
-
       if (events['labels.edit']) {
         logger.debug(`[${accountId}] 标签编辑事件`);
       }
-
       if (events['call']) {
         logger.debug(`[${accountId}] 通话事件`);
       }
-
       if (events['contacts.update']) {
         logger.debug(`[${accountId}] 联系人更新事件`);
       }
-
       if (events['chats.delete']) {
         logger.debug(`[${accountId}] 聊天删除事件`);
       }
-
       if (events['presence.update']) {
         logger.debug(`[${accountId}] 在线状态更新`);
       }
-
       if (events['messages.reaction']) {
         logger.debug(`[${accountId}] 消息反应事件`);
       }
     });
 
-    // 等待登录完成
     const result = await loginPromise;
     clearTimeout(timeoutId);
     return result;
@@ -489,7 +591,6 @@ async function updateAccountStatus(accountId, phoneNumber, status) {
       lastActive: new Date().toISOString()
     };
     
-    // 只更新存在性，不覆盖已有字段
     const existing = await redisStorage.getAccountById(accountId);
     if (existing) {
       await redisStorage.updateAccount(accountId, accountData);
@@ -513,7 +614,6 @@ async function cleanupSession(accountId) {
         fs.rmdirSync(sessionDir);
         logger.info(`[${accountId}] 清理空会话目录`);
       } else {
-        // 如果文件存在但连接失败，可以保留用于调试
         logger.info(`[${accountId}] 会话目录非空，保留: ${files.length} 个文件`);
       }
     }
@@ -522,59 +622,7 @@ async function cleanupSession(accountId) {
   }
 }
 
-/**
- * 处理接收到的消息
- */
-async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
-  try {
-    const messageType = getContentType(msg.message);
-    
-    // 构建消息数据
-    const messageData = {
-      accountId,
-      accountPhone,
-      messageId: msg.key.id,
-      remoteJid: msg.key.remoteJid,
-      remoteJidAlt: msg.key.remoteJidAlt,
-      fromMe: msg.key.fromMe || false,
-      timestamp: msg.messageTimestamp,
-      pushName: msg.pushName,
-      participant: msg.key.participant,
-      messageType: messageType,
-      content: extractMessageContent(msg.message),
-      rawMessage: msg.message
-    };
-
-    // 发布到 NATS
-    await nats.publishMessage('msgs', messageData);
-    
-    // 保存到 Redis
-    await redisStorage.saveMessage({
-      accountId,
-      accountPhone,
-      messageId: msg.key.id,
-      remoteJid: msg.key.remoteJid,
-      fromMe: msg.key.fromMe || false,
-      timestamp: msg.messageTimestamp,
-      pushName: msg.pushName,
-      participant: msg.key.participant,
-      content: extractMessageContent(msg.message),
-      MessageType: messageType,
-      originalMessageType: messageType,
-      message: msg.message
-    });
-
-    // 标记为已读（非自己发送的消息，且非广播/通知类）
-    if (!msg.key.fromMe && msg.key.remoteJid && !isJidNewsletter(msg.key.remoteJid)) {
-      await sock.readMessages([msg.key]);
-    }
-    
-    logger.debug(`[${accountId}] 消息处理完成: ${msg.key.id}`);
-    
-  } catch (error) {
-    logger.error(`[${accountId}] 处理消息失败:`, error);
-  }
-}
+// ========== 消息处理函数 ==========
 
 /**
  * 判断是否为 Newsletter JID
@@ -603,6 +651,70 @@ function extractMessageContent(message) {
 }
 
 /**
+ * 处理接收到的消息（不立即已读，只缓存）
+ */
+async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
+  try {
+    const messageType = getContentType(msg.message);
+    const chatId = msg.key.remoteJid;
+    
+    // 如果是自己发送的消息，触发该会话的已读
+    if (msg.key.fromMe) {
+      if (chatId && !isJidNewsletter(chatId)) {
+        await markChatAsRead(sock, accountId, chatId);
+      }
+      return;
+    }
+    
+    // 构建消息数据
+    const messageData = {
+      accountId,
+      accountPhone,
+      messageId: msg.key.id,
+      remoteJid: chatId,
+      remoteJidAlt: msg.key.remoteJidAlt,
+      fromMe: false,
+      timestamp: msg.messageTimestamp,
+      pushName: msg.pushName,
+      participant: msg.key.participant,
+      messageType: messageType,
+      content: extractMessageContent(msg.message),
+      rawMessage: msg.message,
+      readStatus: 'unread'
+    };
+
+    // 发布到 NATS
+    await nats.publishMessage('msgs', messageData);
+    
+    // 保存到 Redis（标记为未读）
+    await redisStorage.saveMessage({
+      accountId,
+      accountPhone,
+      messageId: msg.key.id,
+      remoteJid: chatId,
+      fromMe: false,
+      timestamp: msg.messageTimestamp,
+      pushName: msg.pushName,
+      participant: msg.key.participant,
+      content: extractMessageContent(msg.message),
+      MessageType: messageType,
+      originalMessageType: messageType,
+      message: msg.message,
+      readStatus: 'unread'
+    });
+
+    // 不立即已读，只缓存
+    if (chatId && !isJidNewsletter(chatId)) {
+      addUnreadMessage(accountId, chatId, msg.key);
+      logger.debug(`[${accountId}] 收到消息 ${msg.key.id}, 会话: ${chatId}, 未读数: ${getUnreadCount(accountId, chatId)}`);
+    }
+    
+  } catch (error) {
+    logger.error(`[${accountId}] 处理消息失败:`, error);
+  }
+}
+
+/**
  * 处理消息状态更新
  */
 async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
@@ -610,7 +722,6 @@ async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
     try {
       const { key, update: statusUpdate } = update;
       
-      // 只关注状态: 3(已送达), 4(已读)
       if (statusUpdate.status !== 3 && statusUpdate.status !== 4) {
         continue;
       }
@@ -630,8 +741,6 @@ async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
       };
 
       await nats.publishMessage('msgs', receiptData);
-      
-      // 更新 Redis 中的消息状态
       await redisStorage.updateMessageStatus(key.id, receiptData.receipt);
       
       logger.debug(`[${accountId}] 消息状态更新: ${key.id} -> ${receiptData.receipt}`);
@@ -653,7 +762,7 @@ async function handleMessageReceiptUpdate(updates, accountId, accountPhone) {
         accountPhone,
         remoteJid: update.remoteJid,
         fromMe: update.fromMe || false,
-        receiptType: update.type, // read, delivered, etc.
+        receiptType: update.type,
         receiptTimestamp: update.timestamp || Math.floor(Date.now() / 1000),
         participant: update.participant || null,
         MessageType: 'msg_receipt_update'
@@ -668,6 +777,8 @@ async function handleMessageReceiptUpdate(updates, accountId, accountPhone) {
   }
 }
 
+// ========== 连接管理函数 ==========
+
 /**
  * 获取连接
  * @param {string} identifier - 账号ID或手机号
@@ -675,18 +786,14 @@ async function handleMessageReceiptUpdate(updates, accountId, accountPhone) {
  * @returns {Promise<Object>} - Socket 连接对象
  */
 async function getConnection(identifier, callback = null) {
-  // 检查是否已有连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
-    // 检查连接是否仍然有效
     if (sock && sock.user) {
       return sock;
     }
-    // 连接无效，删除并重新创建
     connections.delete(identifier);
   }
 
-  // 获取账号信息
   const accountService = require('../account');
   let account = await accountService.getAccountByPhoneNumberOrId(identifier);
 
@@ -695,12 +802,10 @@ async function getConnection(identifier, callback = null) {
     return null;
   }
 
-  // 如果已有该账号的连接，直接返回
   if (connections.has(account.id)) {
     return connections.get(account.id);
   }
 
-  // 创建新连接
   const result = await createConnection(account, callback);
   if (result && result.status === 'connected') {
     return result.sock;
@@ -713,6 +818,7 @@ async function getConnection(identifier, callback = null) {
 /**
  * 关闭连接
  * @param {string} accountId - 账号ID
+ * @returns {Promise<boolean>} - 是否成功
  */
 async function closeConnection(accountId) {
   if (connections.has(accountId)) {
@@ -722,11 +828,14 @@ async function closeConnection(accountId) {
         await sock.end();
       }
       connections.delete(accountId);
-      logger.info(`[${accountId}] 连接已关闭`);
+      // 清理未读缓存
+      unreadMessagesMap.delete(accountId);
+      logger.info(`[${accountId}] 连接已关闭，未读缓存已清理`);
       return true;
     } catch (error) {
       logger.error(`[${accountId}] 关闭连接失败:`, error);
       connections.delete(accountId);
+      unreadMessagesMap.delete(accountId);
       return false;
     }
   }
@@ -754,10 +863,11 @@ function getAllConnections() {
 
 /**
  * 清理空闲连接（定时任务调用）
+ * @returns {Promise<number>} - 关闭的连接数
  */
 async function intervalStopIdelConnection() {
   const now = new Date();
-  const idleTimeout = 60 * 60 * 1000; // 1小时
+  const idleTimeout = 60 * 60 * 1000;
   const oneHourAgo = new Date(now.getTime() - idleTimeout);
 
   let closedCount = 0;
@@ -776,6 +886,50 @@ async function intervalStopIdelConnection() {
   return closedCount;
 }
 
+// ========== 外部 API ==========
+
+/**
+ * 手动标记会话为已读（供外部调用）
+ * @param {string} accountId - 账号ID
+ * @param {string} chatId - 会话ID
+ * @returns {Promise<number>} - 已读消息数量
+ */
+async function markChatRead(accountId, chatId) {
+  const sock = connections.get(accountId);
+  if (!sock) {
+    throw new Error(`账号 ${accountId} 未连接`);
+  }
+  return await markChatAsRead(sock, accountId, chatId);
+}
+
+/**
+ * 获取账号的未读消息统计
+ * @param {string} accountId - 账号ID
+ * @returns {Object} - 各会话的未读消息数
+ */
+function getUnreadStats(accountId) {
+  const cache = getUnreadCache(accountId);
+  const stats = {};
+  for (const [chatId, messages] of cache) {
+    stats[chatId] = messages.length;
+  }
+  return stats;
+}
+
+/**
+ * 获取会话的未读消息列表
+ * @param {string} accountId - 账号ID
+ * @param {string} chatId - 会话ID
+ * @returns {Array} - 未读消息key列表
+ */
+function getUnreadMessages(accountId, chatId) {
+  const cache = getUnreadCache(accountId);
+  if (!cache.has(chatId)) return [];
+  return cache.get(chatId);
+}
+
+// ========== 模块导出 ==========
+
 module.exports = {
   createConnection,
   getConnection,
@@ -783,5 +937,10 @@ module.exports = {
   getAllConnections,
   getConnectionStatus,
   intervalStopIdelConnection,
-  LOGIN_STATUS
+  LOGIN_STATUS,
+  // 未读消息管理
+  markChatRead,
+  getUnreadStats,
+  getUnreadMessages,
+  
 };
