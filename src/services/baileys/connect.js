@@ -47,135 +47,6 @@ const LOGIN_STATUS = {
   BANNED: 'banned'
 };
 
-// ========== 未读消息管理 ==========
-
-// 每个账号的未读消息缓存: accountId -> Map(chatId -> [messageKeys])
-const unreadMessagesMap = new Map();
-
-/**
- * 获取账号的未读消息缓存
- * @param {string} accountId - 账号ID
- * @returns {Map} - 会话ID -> 消息key数组的映射
- */
-function getUnreadCache(accountId) {
-  if (!unreadMessagesMap.has(accountId)) {
-    unreadMessagesMap.set(accountId, new Map());
-  }
-  return unreadMessagesMap.get(accountId);
-}
-
-/**
- * 添加未读消息到缓存
- * @param {string} accountId - 账号ID
- * @param {string} chatId - 会话ID
- * @param {Object} msgKey - 消息key
- */
-function addUnreadMessage(accountId, chatId, msgKey) {
-  const cache = getUnreadCache(accountId);
-  if (!cache.has(chatId)) {
-    cache.set(chatId, []);
-  }
-  cache.get(chatId).push(msgKey);
-  
-  // 限制每个会话的未读消息数量，防止内存溢出
-  const messages = cache.get(chatId);
-  if (messages.length > 1000) {
-    messages.splice(0, messages.length - 1000);
-  }
-  
-  logger.debug(`[${accountId}] 添加未读消息: ${chatId}, 总数: ${messages.length}`);
-}
-
-/**
- * 获取会话的未读消息数量
- * @param {string} accountId - 账号ID
- * @param {string} chatId - 会话ID
- * @returns {number} - 未读消息数量
- */
-function getUnreadCount(accountId, chatId) {
-  const cache = getUnreadCache(accountId);
-  if (!cache.has(chatId)) return 0;
-  return cache.get(chatId).length;
-}
-
-/**
- * 标记会话的所有消息为已读（用户发送消息时触发）
- * @param {Object} sock - Socket连接
- * @param {string} accountId - 账号ID
- * @param {string} chatId - 会话ID
- * @param {boolean} force - 是否强制已读（即使没有未读消息）
- * @returns {Promise<number>} - 已读的消息数量
- */
-async function markChatAsRead(sock, accountId, chatId, force = false) {
-  const cache = getUnreadCache(accountId);
-  
-  if (!cache.has(chatId)) {
-    if (force) {
-      // 强制已读：只读最新的一条消息（模拟打开聊天）
-      try {
-        await sock.readMessages([{ remoteJid: chatId }]);
-        logger.debug(`[${accountId}] 强制已读会话: ${chatId}`);
-        return 1;
-      } catch (error) {
-        logger.warn(`[${accountId}] 强制已读失败: ${chatId}`, error.message);
-        return 0;
-      }
-    }
-    return 0;
-  }
-  
-  const keys = cache.get(chatId);
-  if (keys.length === 0) return 0;
-  
-  try {
-    // 批量已读所有未读消息
-    await sock.readMessages(keys);
-    const count = keys.length;
-    
-    // 清空已读的消息
-    cache.set(chatId, []);
-    
-    logger.info(`[${accountId}] 已读会话 ${chatId} 的 ${count} 条消息 (触发: 用户发送消息)`);
-    
-    // 发布已读事件到 NATS
-    await nats.publishMessage('msgs', {
-      accountId,
-      chatId,
-      readCount: count,
-      eventType: 'chat_read_on_send',
-      timestamp: new Date().toISOString()
-    });
-    
-    return count;
-  } catch (error) {
-    logger.error(`[${accountId}] 标记已读失败: ${chatId}`, error);
-    return 0;
-  }
-}
-
-/**
- * 清理未读缓存（定时任务）
- */
-function cleanupUnreadCache() {
-  for (const [accountId, cache] of unreadMessagesMap) {
-    let hasData = false;
-    for (const [chatId, messages] of cache) {
-      if (messages.length > 100) {
-        cache.set(chatId, messages.slice(-50));
-      }
-      if (messages.length > 0) {
-        hasData = true;
-      }
-    }
-    if (!hasData) {
-      unreadMessagesMap.delete(accountId);
-    }
-  }
-}
-
-// 每小时清理一次
-setInterval(cleanupUnreadCache, 60 * 60 * 1000);
-
 // ========== 辅助函数 ==========
 
 /**
@@ -239,8 +110,6 @@ async function cleanupSession(accountId) {
       if (files.length === 0) {
         fs.rmdirSync(sessionDir);
         logger.info(`[${accountId}] 清理空会话目录`);
-      } else {
-        logger.info(`[${accountId}] 会话目录非空，保留: ${files.length} 个文件`);
       }
     }
   } catch (error) {
@@ -252,18 +121,12 @@ async function cleanupSession(accountId) {
 
 /**
  * 创建 WhatsApp 连接
- * @param {Object} account - 账号信息
- * @param {Function} onConnected - 连接成功回调
- * @param {number} retryCount - 重试次数
- * @param {boolean} usePairCode - 是否使用配对码登录
- * @returns {Promise<Object>} - 连接结果
  */
 async function createConnection(account, onConnected = null, retryCount = 5, usePairCode = false) {
   const accountId = account.id;
   let resolveFunc = null;
   let rejectFunc = null;
   
-  // 创建登录 Promise
   const loginPromise = new Promise((resolve, reject) => {
     resolveFunc = resolve;
     rejectFunc = reject;
@@ -287,7 +150,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     
-    // 代理配置
     let proxyAgent = null;
     if (account.proxy) {
       try {
@@ -298,7 +160,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       }
     }
 
-    // 创建 socket
     const sock = makeWASocket({
       version,
       logger,
@@ -337,7 +198,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     sock.account_status = LOGIN_STATUS.CONNECTING;
     sock.lastActiveTime = new Date();
 
-    // 超时处理
     const timeoutDuration = usePairCode ? 60000 : 120000;
     timeoutId = setTimeout(() => {
       logger.error(`[${accountId}] 登录超时 (${timeoutDuration/1000}秒)`);
@@ -351,13 +211,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     // ---------- 统一事件处理 ----------
     sock.ev.process(async (events) => {
       
-      // 凭证更新
       if (events['creds.update']) {
         await saveCreds();
         logger.debug(`[${accountId}] 凭证已保存`);
       }
 
-      // 连接更新
       if (events['connection.update']) {
         const update = events['connection.update'];
         const { connection, lastDisconnect, qr } = update;
@@ -436,7 +294,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             await updateAccountStatus(accountId, account.phoneNumber, status);
             
             await cleanupSession(accountId);
-            unreadMessagesMap.delete(accountId);
             connections.delete(accountId);
             
             if (rejectFunc) {
@@ -518,7 +375,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         }
       }
 
-      // 新消息
+      // ========== 处理新消息 - 直接已读 ==========
       if (events['messages.upsert']) {
         const upsert = events['messages.upsert'];
         logger.debug(`[${accountId}] 消息更新: type=${upsert.type}`);
@@ -546,15 +403,13 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
                 continue;
               }
 
-              logger.debug(`[${accountId}] 插入消息`);
+              // ========== 直接已读 ==========
               await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
               
             } catch (error) {
               logger.error(`[${accountId}] 处理消息失败:`, error);
             }
           }
-        }else{
-          logger.debug(`[${accountId}] 消息更新: type=${upsert.type}`);
         }
       }
 
@@ -653,26 +508,24 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
   }
 }
 
-// ========== 消息处理函数 ==========
+// ========== 消息处理函数 - 直接已读 ==========
 
 /**
- * 处理接收到的消息（不立即已读，只缓存）
+ * 处理接收到的消息（立即已读）
  */
 async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
   try {
     const messageType = getContentType(msg.message);
     const chatId = msg.key.remoteJid;
     
-    // 如果是自己发送的消息，触发该会话的已读
+    // 如果是自己发送的消息，不处理
     if (msg.key.fromMe) {
-      if (chatId && !isJidNewsletter(chatId)) {
-        await markChatAsRead(sock, accountId, chatId);
-      }
-      logger.error(`[${accountId}] 自己发送的消息 handleIncomingMessage失败`);
       return;
     }
     
     // 构建消息数据
+    const content = extractMessageContent(msg.message);
+    
     const messageData = {
       accountId,
       accountPhone,
@@ -684,15 +537,15 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       pushName: msg.pushName,
       participant: msg.key.participant,
       messageType: messageType,
-      content: extractMessageContent(msg.message),
+      content: content,
       rawMessage: msg.message,
-      readStatus: 'unread'
+      readStatus: 'read'  // 直接标记为已读
     };
 
     // 发布到 NATS
     await nats.publishMessage('msgs', messageData);
     
-    // 保存到 Redis（标记为未读）
+    // 保存到 Redis
     await redisStorage.saveMessage({
       accountId,
       accountPhone,
@@ -702,17 +555,17 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       timestamp: msg.messageTimestamp,
       pushName: msg.pushName,
       participant: msg.key.participant,
-      content: extractMessageContent(msg.message),
+      content: content,
       MessageType: messageType,
       originalMessageType: messageType,
       message: msg.message,
-      readStatus: 'unread'
+      readStatus: 'read'
     });
 
-    // 不立即已读，只缓存
+    // ========== 立即已读 ==========
     if (chatId && !isJidNewsletter(chatId)) {
-      addUnreadMessage(accountId, chatId, msg.key);
-      logger.debug(`[${accountId}] 收到消息 ${msg.key.id}, 会话: ${chatId}, 未读数: ${getUnreadCount(accountId, chatId)}`);
+      await sock.readMessages([msg.key]);
+      logger.debug(`[${accountId}] 已读消息: ${msg.key.id}`);
     }
     
   } catch (error) {
@@ -787,9 +640,6 @@ async function handleMessageReceiptUpdate(updates, accountId, accountPhone) {
 
 /**
  * 获取连接
- * @param {string} identifier - 账号ID或手机号
- * @param {Function} callback - 连接成功回调
- * @returns {Promise<Object>} - Socket 连接对象
  */
 async function getConnection(identifier, callback = null) {
   if (connections.has(identifier)) {
@@ -823,8 +673,6 @@ async function getConnection(identifier, callback = null) {
 
 /**
  * 关闭连接（通过 accountId）
- * @param {string} accountId - 账号ID
- * @returns {Promise<boolean>} - 是否成功
  */
 async function closeConnection(accountId) {
   if (connections.has(accountId)) {
@@ -834,13 +682,11 @@ async function closeConnection(accountId) {
         await sock.end();
       }
       connections.delete(accountId);
-      unreadMessagesMap.delete(accountId);
-      logger.info(`[${accountId}] 连接已关闭，未读缓存已清理`);
+      logger.info(`[${accountId}] 连接已关闭`);
       return true;
     } catch (error) {
       logger.error(`[${accountId}] 关闭连接失败:`, error);
       connections.delete(accountId);
-      unreadMessagesMap.delete(accountId);
       return false;
     }
   }
@@ -849,16 +695,12 @@ async function closeConnection(accountId) {
 
 /**
  * 关闭连接（通过 accountId 或 phoneNumber）- 兼容旧接口
- * @param {string} idOrPhone - 账号ID或手机号
- * @returns {Promise<boolean>} - 是否成功
  */
 async function CloseConnection(idOrPhone) {
-  // 尝试直接通过 ID 查找
   if (connections.has(idOrPhone)) {
     return await closeConnection(idOrPhone);
   }
   
-  // 如果没找到，尝试通过 phoneNumber 查找
   const accountService = require('../account');
   const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
   if (account && connections.has(account.id)) {
@@ -871,8 +713,6 @@ async function CloseConnection(idOrPhone) {
 
 /**
  * 获取连接状态
- * @param {string} accountId - 账号ID
- * @returns {string|null} - 连接状态
  */
 function getConnectionStatus(accountId) {
   const sock = connections.get(accountId);
@@ -882,15 +722,13 @@ function getConnectionStatus(accountId) {
 
 /**
  * 获取所有连接
- * @returns {Map} - 所有连接
  */
 function getAllConnections() {
   return connections;
 }
 
 /**
- * 清理空闲连接（定时任务调用）
- * @returns {Promise<number>} - 关闭的连接数
+ * 清理空闲连接
  */
 async function intervalStopIdelConnection() {
   const now = new Date();
@@ -913,70 +751,15 @@ async function intervalStopIdelConnection() {
   return closedCount;
 }
 
-// ========== 外部 API ==========
-
-/**
- * 手动标记会话为已读（供外部调用，带连接检查）
- * @param {string} accountId - 账号ID
- * @param {string} chatId - 会话ID
- * @returns {Promise<number>} - 已读消息数量
- */
-async function markChatRead(accountId, chatId) {
-  const sock = connections.get(accountId);
-  if (!sock) {
-    throw new Error(`账号 ${accountId} 未连接`);
-  }
-  return await markChatAsRead(sock, accountId, chatId);
-}
-
-/**
- * 获取账号的未读消息统计
- * @param {string} accountId - 账号ID
- * @returns {Object} - 各会话的未读消息数
- */
-function getUnreadStats(accountId) {
-  const cache = getUnreadCache(accountId);
-  const stats = {};
-  for (const [chatId, messages] of cache) {
-    stats[chatId] = messages.length;
-  }
-  return stats;
-}
-
-/**
- * 获取会话的未读消息列表
- * @param {string} accountId - 账号ID
- * @param {string} chatId - 会话ID
- * @returns {Array} - 未读消息key列表
- */
-function getUnreadMessages(accountId, chatId) {
-  const cache = getUnreadCache(accountId);
-  if (!cache.has(chatId)) return [];
-  return cache.get(chatId);
-}
-
 // ========== 模块导出 ==========
 
 module.exports = {
-  // 连接创建
   createConnection,
   getConnection,
-  
-  // 连接关闭（两个版本）
-  closeConnection,      // 通过 accountId
-  CloseConnection,      // 通过 idOrPhone（兼容旧接口）
-  
-  // 连接管理
+  closeConnection,
+  CloseConnection,
   getAllConnections,
   getConnectionStatus,
   intervalStopIdelConnection,
-  
-  // 常量
   LOGIN_STATUS,
-  
-  // 未读消息管理
-  markChatAsRead,       // 核心函数（需要 sock 参数）
-  markChatRead,         // 对外 API（带连接检查）
-  getUnreadStats,
-  getUnreadMessages,
 };
