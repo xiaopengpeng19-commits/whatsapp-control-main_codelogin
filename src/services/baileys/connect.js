@@ -507,6 +507,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
 // ========== 消息处理函数 - 直接已读 ==========
 
+function getRandomDelay() {
+  // 2-10 秒随机延迟
+  return 2000 + Math.random() * 8000;
+}
+
 /**
  * 处理接收到的消息（立即已读）
  */
@@ -574,9 +579,16 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     });
 
     // ========== 立即已读 ==========
+    // if (chatId && !isJidNewsletter(chatId)) {
+    //   await sock.readMessages([msg.key]);
+    //   logger.debug(`[${accountId}] 已读消息: ${msg.key.id}`);
+    // }
+
     if (chatId && !isJidNewsletter(chatId)) {
-      await sock.readMessages([msg.key]);
-      logger.debug(`[${accountId}] 已读消息: ${msg.key.id}`);
+      const delay = getRandomDelay();
+      setTimeout(async () => {
+        await sock.readMessages([msg.key]);
+      }, delay);
     }
     
   } catch (error) {
