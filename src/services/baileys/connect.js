@@ -507,10 +507,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
 // ========== 消息处理函数 - 直接已读 ==========
 
-function getRandomDelay() {
-  // 2-10 秒随机延迟
-  return 2000 + Math.random() * 8000;
-}
+const pendingReads = new Map();
 
 /**
  * 处理接收到的消息（立即已读）
@@ -585,10 +582,26 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     // }
 
     if (chatId && !isJidNewsletter(chatId)) {
-      const delay = getRandomDelay();
-      setTimeout(async () => {
-        await sock.readMessages([msg.key]);
-      }, delay);
+      // 累积到队列
+      if (!pendingReads.has(chatId)) {
+        pendingReads.set(chatId, []);
+      }
+      pendingReads.get(chatId).push(msg.key);
+      
+      // 如果有定时器，重置
+      if (pendingReads.get(chatId).timer) {
+        clearTimeout(pendingReads.get(chatId).timer);
+      }
+      
+      // 5秒后批量已读
+      pendingReads.get(chatId).timer = setTimeout(async () => {
+        const keys = pendingReads.get(chatId) || [];
+        if (keys.length > 0) {
+          await sock.readMessages(keys);
+          pendingReads.set(chatId, []);
+          logger.debug(`[${accountId}] 批量已读 ${keys.length} 条消息`);
+        }
+      }, 3000 + Math.random() * 4000);
     }
     
   } catch (error) {
