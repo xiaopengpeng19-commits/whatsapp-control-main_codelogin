@@ -507,10 +507,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
 // ========== 消息处理函数 - 直接已读 ==========
 
+// 每个会话的待已读队列
 const pendingReads = new Map();
 
 /**
- * 处理接收到的消息（立即已读）
+ * 处理接收到的消息（批量已读）
  */
 async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
   try {
@@ -521,23 +522,9 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
     if (msg.key.fromMe) {
       return;
     }
-
-    // ========== 打印完整的 msg ==========
-    console.log('[handleIncomingMessage] 完整 msg:', JSON.stringify(msg, null, 2));
-    console.log('[handleIncomingMessage] msg.message:', JSON.stringify(msg.message, null, 2));
-    console.log('[handleIncomingMessage] msg.message 的 keys:', Object.keys(msg.message || {}));
     
-    // ========== 打印 msg.message 的每个字段 ==========
-    if (msg.message) {
-      for (const key of Object.keys(msg.message)) {
-        console.log(`[handleIncomingMessage] msg.message.${key}:`, msg.message[key]);
-        console.log(`[handleIncomingMessage] msg.message.${key} 的类型:`, typeof msg.message[key]);
-      }
-    }
-    
-    // 构建消息数据
+    // 提取消息内容
     const content = extractMessageContent(msg.message);
-    
     
     const messageData = {
       accountId,
@@ -552,7 +539,7 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       messageType: messageType,
       content: content,
       rawMessage: msg.message,
-      readStatus: 'read'  // 直接标记为已读
+      readStatus: 'unread'
     };
 
     // 发布到 NATS
@@ -572,36 +559,49 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       MessageType: messageType,
       originalMessageType: messageType,
       message: msg.message,
-      readStatus: 'read'
+      readStatus: 'unread'
     });
 
-    // ========== 立即已读 ==========
-    // if (chatId && !isJidNewsletter(chatId)) {
-    //   await sock.readMessages([msg.key]);
-    //   logger.debug(`[${accountId}] 已读消息: ${msg.key.id}`);
-    // }
-
+    // ========== 批量已读 ==========
     if (chatId && !isJidNewsletter(chatId)) {
-      // 累积到队列
+      // 初始化队列
       if (!pendingReads.has(chatId)) {
-        pendingReads.set(chatId, []);
+        pendingReads.set(chatId, {
+          keys: [],
+          timer: null
+        });
       }
-      pendingReads.get(chatId).push(msg.key);
+      
+      const queue = pendingReads.get(chatId);
+      queue.keys.push(msg.key);
       
       // 如果有定时器，重置
-      if (pendingReads.get(chatId).timer) {
-        clearTimeout(pendingReads.get(chatId).timer);
+      if (queue.timer) {
+        clearTimeout(queue.timer);
       }
       
-      // 5秒后批量已读
-      pendingReads.get(chatId).timer = setTimeout(async () => {
-        const keys = pendingReads.get(chatId) || [];
+      // 3-7秒后批量已读
+      const delay = 3000 + Math.random() * 4000;
+      queue.timer = setTimeout(async () => {
+        const keys = queue.keys || [];
         if (keys.length > 0) {
-          await sock.readMessages(keys);
-          pendingReads.set(chatId, []);
-          logger.debug(`[${accountId}] 批量已读 ${keys.length} 条消息`);
+          try {
+            await sock.readMessages(keys);
+            logger.info(`[${accountId}] 批量已读 ${keys.length} 条消息, 会话: ${chatId}`);
+            
+            // 更新 Redis 中消息状态为已读
+            for (const key of keys) {
+              await redisStorage.updateMessageStatus(key.id, 'read');
+            }
+          } catch (error) {
+            logger.error(`[${accountId}] 批量已读失败:`, error);
+          }
+          queue.keys = [];
         }
-      }, 3000 + Math.random() * 4000);
+        queue.timer = null;
+      }, delay);
+      
+      logger.debug(`[${accountId}] 添加消息到待读队列: ${msg.key.id}, 当前队列: ${queue.keys.length}, 延迟: ${delay}ms`);
     }
     
   } catch (error) {
