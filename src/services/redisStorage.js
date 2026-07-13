@@ -232,7 +232,7 @@ async function updateAccount(accountId, fields) {
       accountPhone: updated.phoneNumber,
       socketStatus: updated.socket_status,
       updatedAt: updated.updatedAt,
-      accountStatus: updated.account_status || updated.socket_status
+      accountStatus: updated.account_status
     };
     
     try {

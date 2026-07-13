@@ -296,7 +296,7 @@ class AccountService {
 
   async GetAccountState2(account) {
     const statusmap = {
-      '封禁': 5,
+      'banned': 5,
       'expired': 4,
       'normal': 3,
       'unconnected': 1,
@@ -311,7 +311,7 @@ class AccountService {
         return statusmap[sockstatus.account_status] || 1;
       }
       console.log("account.account_status:", account.account_status);
-      if (account.account_status == '封禁') {
+      if (account.account_status == 'banned') {
         return 5;
       } else if (account.account_status == 'expired') {
         return 4;

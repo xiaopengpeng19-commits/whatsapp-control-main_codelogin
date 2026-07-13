@@ -81,7 +81,6 @@ async function updateAccountStatus(accountId, phoneNumber, status) {
       id: accountId,
       phoneNumber: phoneNumber || null,
       socket_status: status,
-      account_status: status === LOGIN_STATUS.CONNECTED ? 'normal' : status,
       lastActive: new Date().toISOString()
     };
     
