@@ -75,12 +75,13 @@ function extractMessageContent(message) {
 /**
  * 更新账号状态到 Redis
  */
-async function updateAccountStatus(accountId, phoneNumber, status) {
+async function updateAccountStatus(accountId, phoneNumber, account_status,socket_status) {
   try {
     const accountData = {
       id: accountId,
       phoneNumber: phoneNumber || null,
-      account_status: status,
+      socket_status:socket_status,
+      account_status: account_status,
       lastActive: new Date().toISOString()
     };
     
@@ -200,7 +201,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     timeoutId = setTimeout(() => {
       logger.error(`[${accountId}] 登录超时 (${timeoutDuration/1000}秒)`);
       sock.account_status = LOGIN_STATUS.FAILED;
-      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED);
+      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED,"disconnected");
       if (rejectFunc) {
         rejectFunc(new Error('登录超时'));
       }
@@ -234,7 +235,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             const code = await sock.requestPairingCode(phoneNumber);
             logger.info(`[${accountId}] 配对码生成成功: ${code}`);
             
-            await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE);
+            await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE,"disconnected");
             
             if (resolveFunc) {
               resolveFunc({
@@ -247,7 +248,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           } catch (err) {
             logger.error(`[${accountId}] 请求配对码失败:`, err);
             sock.account_status = LOGIN_STATUS.FAILED;
-            updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED);
+            updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED,"disconnected");
             rejectFunc(err);
           }
           return;
@@ -256,7 +257,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         // 处理二维码登录
         if (qr && !usePairCode) {
           logger.info(`[${accountId}] QR码已生成`);
-          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR);
+          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR,"disconnected");
           
           if (resolveFunc) {
             resolveFunc({
@@ -293,11 +294,8 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             return;
           } else {
             const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
-            sock.account_status = status;
-            if(statusCode === 401){
-              sock.socket_status = "disconnected";
-            }
-            await updateAccountStatus(accountId, account.phoneNumber, status);
+            sock.socket_status = "disconnected";
+            await updateAccountStatus(accountId, account.phoneNumber, status,sock.socket_status);
             
             await cleanupSession(accountId);
             connections.delete(accountId);
@@ -317,7 +315,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           sock.account_status = LOGIN_STATUS.CONNECTED;
           sock.lastActiveTime = new Date();
 
-          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.CONNECTED);
+          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.CONNECTED,"connected");
           connections.set(accountId, sock);
 
           logger.info(`[${accountId}] WhatsApp 连接成功: ${account.phoneNumber}`);
