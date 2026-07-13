@@ -194,6 +194,25 @@ async function updateAccount(accountId, fields) {
   };
 
   await client.hSet(getAccountKey(accountId), flattenObject(updated));
+
+
+  // ========== 添加 NATS 通信（参考 upsertAccount） ==========
+  if (updated.phoneNumber) {
+    const connectionData = {
+      accountId: accountId,
+      accountPhone: updated.phoneNumber,
+      updatedAt: updated.updatedAt,
+      accountStatus: updated.account_status || updated.socket_status
+    };
+    
+    try {
+      await nats.publishMessage(`connection`, connectionData);
+    } catch (natsError) {
+      // NATS 发送失败不影响主流程
+      console.error('NATS publish failed in updateAccount:', natsError);
+    }
+  }
+
   return updated;
 }
 
