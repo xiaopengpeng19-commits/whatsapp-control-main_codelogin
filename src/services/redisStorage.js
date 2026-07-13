@@ -44,10 +44,10 @@ function parseObject(object) {
 function flattenObject(object) {
   const flat = {};
   for (const [key, value] of Object.entries(object)) {
-    if (value === undefined || value === null) {
-      continue;
-    }
-    if (typeof value === 'object') {
+    if (value === undefined || value === null) continue;
+    if (key === 'phoneNumber' && value !== undefined) {
+      flat[key] = String(value);  // ← 强制转为字符串
+    } else if (typeof value === 'object') {
       flat[key] = JSON.stringify(value);
     } else {
       flat[key] = String(value);
