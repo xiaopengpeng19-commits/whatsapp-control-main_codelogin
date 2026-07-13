@@ -721,6 +721,8 @@ async function closeConnection(accountId) {
       }
       connections.delete(accountId);
       logger.info(`[${accountId}] 连接已关闭`);
+      console.log('当前连接数:', connections.size);
+      console.log('是否还有该账号:', connections.has(accountId));
       return true;
     } catch (error) {
       logger.error(`[${accountId}] 关闭连接失败:`, error);
