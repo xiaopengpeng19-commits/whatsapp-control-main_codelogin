@@ -624,6 +624,16 @@ async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
     try {
       const { key, update: statusUpdate } = update;
       
+      // ========== 打印完整的更新数据 ==========
+      console.log(`[${accountId}] 消息状态更新详情:`, JSON.stringify({
+        messageId: key?.id,
+        remoteJid: key?.remoteJid,
+        fromMe: key?.fromMe,
+        status: statusUpdate?.status,
+        statusUpdateKeys: Object.keys(statusUpdate || {})
+      }, null, 2));
+
+
       if (statusUpdate.status !== 3 && statusUpdate.status !== 4) {
         continue;
       }
