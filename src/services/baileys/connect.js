@@ -273,8 +273,12 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           const statusCode = (lastDisconnect?.error instanceof Boom) 
             ? lastDisconnect.error?.output?.statusCode 
             : null;
+
+          // 检查是否是手动关闭
+          const isManualClose = sock._manualClose === true;
           
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut 
+          const shouldReconnect = !isManualClose
+            && statusCode !== DisconnectReason.loggedOut 
             && statusCode !== 403 
             && lastDisconnect?.error?.message !== 'QR refs attempts ended';
 
@@ -303,6 +307,10 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
         // 处理连接成功
         if (connection === 'open') {
+
+          // 重置手动关闭标志（下次意外断开可以重连）
+          sock._manualClose = false;
+
           const phoneNumber = sock.user?.id?.split(':')[0];
           account.phoneNumber = phoneNumber;
           sock.account_status = LOGIN_STATUS.CONNECTED;
@@ -716,13 +724,15 @@ async function closeConnection(accountId) {
   if (connections.has(accountId)) {
     try {
       const sock = connections.get(accountId);
+
+      // 设置阻止重连标志
+      sock._manualClose = true;
+
       if (sock && typeof sock.end === 'function') {
         await sock.end();
       }
       connections.delete(accountId);
       logger.info(`[${accountId}] 连接已关闭`);
-      console.log('当前连接数:', connections.size);
-      console.log('是否还有该账号:', connections.has(accountId));
       return true;
     } catch (error) {
       logger.error(`[${accountId}] 关闭连接失败:`, error);
