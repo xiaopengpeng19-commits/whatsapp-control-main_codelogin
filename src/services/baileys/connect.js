@@ -801,6 +801,7 @@ async function intervalStopIdelConnection() {
 
 /**
  * 重置所有账号的连接状态（启动时调用）
+ * 只重置 socket_status === "connected" 的账号的 account_status
  */
 async function resetAllConnectionStatus() {
   try {
@@ -809,14 +810,13 @@ async function resetAllConnectionStatus() {
     for (const account of accounts) {
       if (account.id && account.socket_status === "connected") {
         await redisStorage.updateAccount(account.id, {
-          socket_status: account.socket_status,
           account_status: 'unconnected',
           lastActive: new Date().toISOString()
         });
         count++;
       }
     }
-    logger.info(`✅ 已重置 ${count} 个账号的连接状态`);
+    logger.info(`✅ 已重置 ${count} 个账号的业务状态`);
     return count;
   } catch (error) {
     logger.error('重置连接状态失败:', error);
