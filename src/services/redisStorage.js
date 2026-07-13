@@ -126,13 +126,44 @@ async function getAllAccounts() {
     })
   );
 
-  return accounts.filter(Boolean);
+  // ========== 过滤：只返回有 phoneNumber 的账号 ==========
+  return accounts.filter(acc => acc && acc.phoneNumber);
 }
+
+// src/services/redisStorage.js
 
 async function upsertAccount(account) {
   const client = getClient();
   const accountId = String(account.id);
   const accountKey = getAccountKey(accountId);
+  
+  // ========== 如果没有 phoneNumber，不保存（或只保存不加入列表） ==========
+  if (!account.phoneNumber) {
+    // 直接保存但不加入 accounts:set（这样 getAllAccounts 不会返回它）
+    const now = new Date().toISOString();
+    const updated = {
+      ...account,
+      updatedAt: now,
+      createdAt: now
+    };
+    await client.hSet(accountKey, flattenObject(updated));
+    return updated;
+  }
+  
+  // ========== 按 phoneNumber 去重：删除旧的同号码账号 ==========
+  const existingPhoneAccountId = await client.get(getAccountPhoneKey(account.phoneNumber));
+  if (existingPhoneAccountId && existingPhoneAccountId !== accountId) {
+    // 删除旧的账号
+    const oldAccountKey = getAccountKey(existingPhoneAccountId);
+    const oldData = await client.hGetAll(oldAccountKey);
+    if (oldData && Object.keys(oldData).length > 0) {
+      await client.del(oldAccountKey);
+      await client.sRem(ACCOUNT_SET, existingPhoneAccountId);
+      console.log(`[upsertAccount] 删除重复账号: ${existingPhoneAccountId} (phone: ${account.phoneNumber})`);
+    }
+  }
+  
+  // ========== 正常保存 ==========
   const existingData = await client.hGetAll(accountKey);
   const existingAccount = parseObject(existingData) || {};
 
@@ -158,17 +189,14 @@ async function upsertAccount(account) {
 
   await client.hSet(accountKey, flattenObject(updated));
 
-
-  if(account.phoneNumber){
-    // 构建回执数据
+  // NATS 通知
+  if (account.phoneNumber) {
     const connectionData = {
       accountId: accountId,
       accountPhone: account.phoneNumber,
       updatedAt: now,
       accountStatus: account.account_status
     };
-      
-    // 发布回执更新到 NATS
     await nats.publishMessage(`connection`, connectionData);
   }
   
