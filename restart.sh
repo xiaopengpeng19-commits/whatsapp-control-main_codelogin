@@ -1,12 +1,36 @@
 #!/bin/bash
-echo "===== 开始停止旧的 whatsapp 服务 ====="
-# 杀掉运行 node app.js 的进程
-pkill -f "node app.js"
-sleep 1
-echo "===== 旧进程已清理，重新启动服务 ====="
-# 后台启动项目
-nohup npm start > app.log 2>&1 &
-sleep 1
-echo "===== 服务启动完成，实时日志查看命令：tail -f app.log ====="
-# 打印当前node进程确认
-ps aux | grep node
+
+# 保存当前目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "=========================================="
+echo "🔄 重启服务 - $(date)"
+echo "=========================================="
+
+# 1. 拉取最新代码
+echo "📥 拉取最新代码..."
+git pull origin main || git pull origin master
+
+# 2. 安装依赖
+echo "📦 安装依赖..."
+npm install
+
+# 3. 停止旧服务
+echo "🛑 停止旧服务..."
+pm2 stop app 2>/dev/null || true
+pm2 delete app 2>/dev/null || true
+
+# 4. 启动服务
+echo "🚀 启动服务..."
+pm2 start app.js --name app
+
+# 5. 保存 PM2 配置
+pm2 save
+
+echo "=========================================="
+echo "✅ 重启完成 - $(date)"
+echo "=========================================="
+
+# 6. 查看日志
+pm2 logs app --lines 10

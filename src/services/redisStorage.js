@@ -1,6 +1,6 @@
 const { getClient } = require('../config/redis');
 const nats = require('../config/nats');
-
+const logger = require('../utils/logger');
 const ACCOUNT_SET = 'accounts:set';
 
 function redisKey(...parts) {
