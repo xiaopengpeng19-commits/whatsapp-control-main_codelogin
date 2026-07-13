@@ -80,7 +80,7 @@ async function updateAccountStatus(accountId, phoneNumber, status) {
     const accountData = {
       id: accountId,
       phoneNumber: phoneNumber || null,
-      socket_status: status,
+      account_status: status,
       lastActive: new Date().toISOString()
     };
     
@@ -279,6 +279,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           const shouldReconnect = !isManualClose
             && statusCode !== DisconnectReason.loggedOut 
             && statusCode !== 403 
+            && statusCode !== 401
             && lastDisconnect?.error?.message !== 'QR refs attempts ended';
 
           logger.warn(`[${accountId}] 连接关闭, 状态码: ${statusCode}, 重试: ${shouldReconnect}`);
@@ -293,6 +294,9 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           } else {
             const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
             sock.account_status = status;
+            if(statusCode === 401){
+              sock.socket_status = "disconnected";
+            }
             await updateAccountStatus(accountId, account.phoneNumber, status);
             
             await cleanupSession(accountId);
