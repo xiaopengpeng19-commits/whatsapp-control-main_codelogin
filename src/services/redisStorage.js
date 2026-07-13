@@ -255,10 +255,13 @@ async function deleteAccount(accountId) {
     await client.del(getAccountPhoneKey(existing.phoneNumber));
   }
 
-  await client.sRem(ACCOUNT_SET, accountId);
-  await deleteChatsByAccountId(accountId);
-  await deleteGroupsByAccountId(accountId);
-  await client.del(getAccountKey(accountId));
+  // ========== 确保 accountId 是字符串 ==========
+  const id = String(accountId);
+  await client.sRem(ACCOUNT_SET, id);
+  
+  await deleteChatsByAccountId(id);
+  await deleteGroupsByAccountId(id);
+  await client.del(getAccountKey(id));
   return true;
 }
 
