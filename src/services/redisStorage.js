@@ -206,6 +206,7 @@ async function updateAccount(accountId, fields) {
     };
     
     try {
+      logger.info(`[updateAccount] NATS 消息: ${JSON.stringify(connectionData)}`);
       await nats.publishMessage(`connection`, connectionData);
     } catch (natsError) {
       // NATS 发送失败不影响主流程
