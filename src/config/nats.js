@@ -139,7 +139,7 @@ async function publishMessage(subject, data) {
       logger.error('Cannot publish message, no NATS connection');
       return false;
     }
-    
+    logger.info(`NATS 消息: ${JSON.stringify(data)}`);
     nc.publish(subject, JSON.stringify(data));
     return true;
   } catch (error) {
