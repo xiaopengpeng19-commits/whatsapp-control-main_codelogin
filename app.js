@@ -13,7 +13,7 @@ const natsConfig = require('./src/config/nats');
 
 const errorHandler = require('./src/middleware/errorHandler');
 const responseFormatter = require('./src/middleware/responseFormatter');
-const { resetAllConnectionStatus } = require('./services/baileys/connect');
+const { resetAllConnectionStatus } = require('./src/services/baileys/connect');
 
 // Import routes
 const accountRoutes = require('./src/routes/account');
