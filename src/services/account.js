@@ -31,7 +31,6 @@ class AccountService {
         account_status: 'unconnected',
         phoneNumber: formattedPhone,
         proxy: proxy || null,
-        socket_status: 'disconnected',
         sessionId: sessionId || null,
       };
 

@@ -807,9 +807,10 @@ async function resetAllConnectionStatus() {
     const accounts = await redisStorage.getAllAccounts();
     let count = 0;
     for (const account of accounts) {
-      if (account.id) {
+      if (account.id && account.socket_status === "connected") {
         await redisStorage.updateAccount(account.id, {
-          socket_status: 'disconnected',
+          socket_status: account.socket_status,
+          account_status: 'unconnected',
           lastActive: new Date().toISOString()
         });
         count++;

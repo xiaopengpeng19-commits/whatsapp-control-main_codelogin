@@ -194,6 +194,7 @@ async function upsertAccount(account) {
     const connectionData = {
       accountId: accountId,
       accountPhone: account.phoneNumber,
+      socketStatus: account.socket_status,
       updatedAt: now,
       accountStatus: account.account_status
     };
@@ -229,6 +230,7 @@ async function updateAccount(accountId, fields) {
     const connectionData = {
       accountId: accountId,
       accountPhone: updated.phoneNumber,
+      socketStatus: updated.socket_status,
       updatedAt: updated.updatedAt,
       accountStatus: updated.account_status || updated.socket_status
     };
