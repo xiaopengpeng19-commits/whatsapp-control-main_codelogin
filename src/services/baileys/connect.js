@@ -166,6 +166,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       },
       agent: proxyAgent,
       fetchAgent: proxyAgent,
+      shouldSyncHistoryMessage:false,
       msgRetryCounterCache,
       connectTimeoutMs: 60000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
