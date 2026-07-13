@@ -311,15 +311,13 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           // 重置手动关闭标志（下次意外断开可以重连）
           sock._manualClose = false;
 
-          const phoneNumber = sock.user?.id?.split(':')[0];
-          account.phoneNumber = phoneNumber;
           sock.account_status = LOGIN_STATUS.CONNECTED;
           sock.lastActiveTime = new Date();
 
-          await updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED);
+          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.CONNECTED);
           connections.set(accountId, sock);
 
-          logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
+          logger.info(`[${accountId}] WhatsApp 连接成功: ${account.phoneNumber}`);
 
           if (onConnected) {
             try {
@@ -334,7 +332,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
               status: 'connected',
               sock: sock,
               accountId: accountId,
-              phoneNumber: phoneNumber
+              phoneNumber: account.phoneNumber
             });
           }
         }
@@ -801,6 +799,30 @@ async function intervalStopIdelConnection() {
   return closedCount;
 }
 
+/**
+ * 重置所有账号的连接状态（启动时调用）
+ */
+async function resetAllConnectionStatus() {
+  try {
+    const accounts = await redisStorage.getAllAccounts();
+    let count = 0;
+    for (const account of accounts) {
+      if (account.id) {
+        await redisStorage.updateAccount(account.id, {
+          socket_status: 'disconnected',
+          lastActive: new Date().toISOString()
+        });
+        count++;
+      }
+    }
+    logger.info(`✅ 已重置 ${count} 个账号的连接状态`);
+    return count;
+  } catch (error) {
+    logger.error('重置连接状态失败:', error);
+    return 0;
+  }
+}
+
 // ========== 模块导出 ==========
 
 module.exports = {
@@ -811,5 +833,6 @@ module.exports = {
   getAllConnections,
   getConnectionStatus,
   intervalStopIdelConnection,
+  resetAllConnectionStatus,
   LOGIN_STATUS,
 };

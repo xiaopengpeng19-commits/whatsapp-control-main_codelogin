@@ -13,6 +13,7 @@ const natsConfig = require('./src/config/nats');
 
 const errorHandler = require('./src/middleware/errorHandler');
 const responseFormatter = require('./src/middleware/responseFormatter');
+const { resetAllConnectionStatus } = require('./services/baileys/connect');
 
 // Import routes
 const accountRoutes = require('./src/routes/account');
@@ -101,6 +102,11 @@ server.listen(process.env.PORT || 8080, () => {
       logger.error('Error checking idle connections:', error);
     }
   }, 15 * 60 * 1000);
+
+  // 加个小延时，避免启动瞬间压力过大
+  setTimeout(() => {
+    resetAllConnectionStatus().catch(console.error);
+  }, 1000);
   
   logger.info('Idle connection checker initialized');
 });
@@ -133,5 +139,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('=====================================================');
   logger.error('Unhandled Rejection:', { reason: reason?.message || String(reason) });
 });
+
+
 
 module.exports = server; 
