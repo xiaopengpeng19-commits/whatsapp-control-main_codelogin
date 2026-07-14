@@ -294,7 +294,9 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
             return;
           } else {
             const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
-            sock.socket_status = "disconnected";
+            if(statusCode === 403||statusCode === 401){
+              sock.socket_status = "disconnected";
+            }
             await updateAccountStatus(accountId, account.phoneNumber, status,sock.socket_status);
             
             await cleanupSession(accountId);
