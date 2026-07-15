@@ -340,7 +340,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           sock.account_status = LOGIN_STATUS.CONNECTED;
           sock.lastActiveTime = new Date();
 
-          await updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED);
+          await updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED,'connected');
           connections.set(accountId, sock);
 
           logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
