@@ -194,7 +194,7 @@ class AccountService {
     let result = await createConnection(account, callbackfun);
     console.log('resultgetQrCode:', result);
 
-    if (result.status == 500) {
+    if (result.status == 'failed') {
       return {
         code: 500,
         message: "cant connect to whatsapp",
@@ -210,26 +210,11 @@ class AccountService {
         }
       };
     }
-    return { code: 500, message: "unknown status", data: null };
-  }
-
-  async getQrCodeold(account, callbackurl) {
-    console.log("callbackfuncgetQrCode", callbackurl);
-    let result = await createConnection(account, callbackurl);
-    console.log('resultgetQrCode:', result);
-
-    if (result.status == 500) {
-      return {
-        status: 500,
-        data: "cant connect to whatsapp",
-      };
-    }
-    if (result.status == 403) {
-      return {
-        status: 403,
-        qr: result.qr,
-      };
-    }
+    return {
+      code: 500,
+      message: `unknown status: ${result.status}`,
+      data: null
+    };
   }
 
   async getPairCode(account, callbackurl) {
