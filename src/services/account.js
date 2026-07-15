@@ -201,7 +201,7 @@ class AccountService {
         data: null
       };
     }
-    if (result.status == 403) {
+    if (result.status == 'waiting_qr') {
       return {
         code: 200,
         message: "qr code generated",
