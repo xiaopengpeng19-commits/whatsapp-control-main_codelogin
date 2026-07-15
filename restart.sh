@@ -1,33 +1,29 @@
 #!/bin/bash
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
 echo "=========================================="
 echo "🔄 重启服务 - $(date)"
 echo "=========================================="
 
+# 1. 拉取最新代码
 echo "📥 拉取最新代码..."
-git pull origin master
+git stash
+git pull
+git stash pop 2>/dev/null || true
 
+# 2. 安装依赖
 echo "📦 安装依赖..."
 npm install
 
+# 3. 杀掉旧进程
 echo "🛑 停止旧服务..."
-pm2 stop app 2>/dev/null || true
-pm2 delete app 2>/dev/null || true
-
-# ========== 强制清理端口 ==========
-echo "🧹 清理端口 8080..."
+pkill -f "node app.js" 2>/dev/null || true
 fuser -k 8080/tcp 2>/dev/null || true
 sleep 1
 
+# 4. 启动服务
 echo "🚀 启动服务..."
-pm2 start app.js --name app
-pm2 save
+npm start
 
 echo "=========================================="
 echo "✅ 重启完成 - $(date)"
 echo "=========================================="
-
-pm2 logs app --lines 10
