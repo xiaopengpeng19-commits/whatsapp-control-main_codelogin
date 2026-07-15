@@ -311,16 +311,39 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         // 处理连接成功
         if (connection === 'open') {
 
-          // 重置手动关闭标志（下次意外断开可以重连）
+          // 重置手动关闭标志
           sock._manualClose = false;
+
+          // ========== 从 sock.user 获取手机号 ==========
+
+          // ========== 打印所有信息 ==========
+          logger.info(`[${accountId}] === connection === 'open' ===`);
+          logger.info(`[${accountId}] account.phoneNumber:`, account.phoneNumber);
+          logger.info(`[${accountId}] sock.user:`, sock.user);
+          logger.info(`[${accountId}] sock.user?.id:`, sock.user?.id);
+          logger.info(`[${accountId}] sock.user?.id 类型:`, typeof sock.user?.id);
+
+          let phoneNumber = account.phoneNumber;
+          if (!phoneNumber && sock.user?.id) {
+            // 从 user.id 提取纯号码
+            const match = sock.user.id.match(/^(\d+)/);
+            if (match) {
+              phoneNumber = match[1];
+            }
+            // 如果上面匹配不到，用 split
+            if (!phoneNumber) {
+              phoneNumber = sock.user.id.split(':')[0]?.split('@')[0];
+            }
+          }
+          account.phoneNumber = phoneNumber;
 
           sock.account_status = LOGIN_STATUS.CONNECTED;
           sock.lastActiveTime = new Date();
 
-          await updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.CONNECTED,"connected");
+          await updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED);
           connections.set(accountId, sock);
 
-          logger.info(`[${accountId}] WhatsApp 连接成功: ${account.phoneNumber}`);
+          logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
 
           if (onConnected) {
             try {
