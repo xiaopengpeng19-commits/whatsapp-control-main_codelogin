@@ -36,11 +36,23 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     const { version } = await fetchLatestBaileysVersion();
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const proxyAgent = createProxyAgent(account.proxy);
+    
+    // ==========================================
+    // 创建 logger 实例，所有地方统一使用
+    // ==========================================
     const baileysLogger = createBaileysLogger();
+    
+    // 添加 trace 方法（如果不存在）
+    if (!baileysLogger.trace) {
+      baileysLogger.trace = () => {};
+    }
 
     const sock = makeWASocket({
       version,
-      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
+      auth: { 
+        creds: state.creds, 
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger)  // 改用 baileysLogger
+      },
       agent: proxyAgent,
       fetchAgent: proxyAgent,
       shouldSyncHistoryMessage: () => false,
@@ -58,7 +70,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
           }
           return proto.Message.create({ conversation: '' });
         } catch (error) {
-          logger.error(`[${accountId}] getMessage 失败:`, error);
+          baileysLogger.error(`[${accountId}] getMessage 失败:`, error);  // 改用 baileysLogger
           return proto.Message.create({ conversation: '' });
         }
       }
@@ -73,7 +85,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     sock.ev.process(async (events) => {
       if (events['creds.update']) {
         await saveCreds();
-        logger.debug(`[${accountId}] 凭证已保存`);
+        baileysLogger.debug(`[${accountId}] 凭证已保存`);  // 改用 baileysLogger
       }
 
       if (events['connection.update']) {
@@ -89,7 +101,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         if (upsert.type === 'notify' || upsert.type === 'append') {
           sock.lastActiveTime = new Date();
           for (const msg of upsert.messages || []) {
-            // 处理特殊命令
             const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
             if (text === 'requestPlaceholder' && !upsert.requestId) {
               await sock.requestPlaceholderResend(msg.key);
@@ -133,7 +144,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
     const timeoutDuration = usePairCode ? 60000 : 120000;
     const timeoutId = setTimeout(() => {
-      logger.error(`[${accountId}] 登录超时`);
+      baileysLogger.error(`[${accountId}] 登录超时`);  // 改用 baileysLogger
       sock.account_status = LOGIN_STATUS.FAILED;
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, 'disconnected');
       rejectFunc(new Error('登录超时'));
@@ -144,7 +155,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     return result;
 
   } catch (error) {
-    logger.error(`[${accountId}] 创建连接失败:`, error);
+    baileysLogger.error(`[${accountId}] 创建连接失败:`, error);  // 改用 baileysLogger
     return { status: 'failed', error: error.message };
   }
 }
