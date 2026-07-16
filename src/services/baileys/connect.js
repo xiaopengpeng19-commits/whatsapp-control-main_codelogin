@@ -12,7 +12,27 @@ const nats = require('../../config/nats');
 
 // 创建日志记录器
 const { conn } = require('../../utils/logger'); const logger = conn;
-
+const baileysLogger = P({
+  level: process.env.LOG_LEVEL || 'trace',
+  transport: {
+    targets: [
+      {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'SYS:standard',
+          ignore: 'pid,hostname',
+        },
+        level: 'trace',
+      },
+      {
+        target: 'pino/file',
+        options: { destination: './wa-logs.txt' },
+        level: 'trace',
+      },
+    ],
+  },
+});
 // Map to store active WhatsApp connections
 const connections = new Map();
 const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
@@ -143,7 +163,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
     const sock = makeWASocket({
       version,
-      logger,
+      logger:baileysLogger,
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
