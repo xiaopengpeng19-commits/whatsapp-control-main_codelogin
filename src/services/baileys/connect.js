@@ -13,7 +13,7 @@ const nats = require('../../config/nats');
 // 创建日志记录器
 const { conn } = require('../../utils/logger'); const logger = conn;
 const baileysLogger = P({
-  level: process.env.LOG_LEVEL || 'trace',
+  level: process.env.LOG_LEVEL || 'warn',
   transport: {
     targets: [
       {
