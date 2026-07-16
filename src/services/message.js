@@ -65,32 +65,32 @@ class MessageService {
    * Send text message - 统一返回格式
    */
   async SendTextMsg(idorphone, body) {
-
-    logger.info("SendTextMsg debug:", { idorphone, body });
-    
-    try {
-      
-      const { To, Text, DeleteForMe } = body;
-      const sock = await getConnection(idorphone);
-      if (!sock) {
-        return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
+      try {
+          const To = body.To || body.to;
+          const Text = body.Text || body.text;
+          const DeleteForMe = body.DeleteForMe || false;
+          
+          const sock = await getConnection(idorphone);
+          if (!sock) {
+              return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
+          }
+          let response = await this.sendMessageWTyping(sock, To, {
+              text: Text,
+              ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
+          });
+          return {
+              code: 200,
+              message: "success",
+              data: {
+                  to: To,
+                  messageId: response.key.id
+              }
+          };
+      } catch (error) {
+          logger.info("SendTextMsg error:", error);
+          const to = body?.To || body?.to || '';
+          return { code: 500, message: error.message, data: { to: to } };
       }
-      let response = await this.sendMessageWTyping(sock, To, {
-        text: Text,
-        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
-      });
-      return {
-        code: 200,
-        message: "success",
-        data: {
-          to: To,
-          messageId: response.key.id
-        }
-      };
-    } catch (error) {
-      logger.info("SendTextMsg error:", error);
-      return { code: 500, message: error.message, data: { to: To } };
-    }
   }
 
   /**
