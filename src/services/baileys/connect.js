@@ -45,7 +45,7 @@ const LOGIN_STATUS = {
   WAITING_QR: 'waiting_qr',
   WAITING_PAIR_CODE: 'waiting_pair',
   CONNECTING: 'connecting',
-  CONNECTED: 'connected',
+  CONNECTED: 'normal',
   FAILED: 'failed',
   EXPIRED: 'expired',
   BANNED: 'banned'

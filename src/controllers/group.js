@@ -1,4 +1,4 @@
-const logger = require('../utils/logger');
+const { getModule } = require('../utils/logger'); const logger = getModule('controller');
 const { getConnection} = require('../services/baileys/connect');
 // In-memory storage for development
 const groups = [];
