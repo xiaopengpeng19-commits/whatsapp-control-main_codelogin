@@ -8,7 +8,8 @@ const { createServer } = require('http');
 const serve = require('koa-static');
 const path = require('path');
 
-const logger = require('./src/utils/logger');
+const { getModule } = require('./src/utils/logger');
+const logger = getModule('app');
 const natsConfig = require('./src/config/nats');
 
 const errorHandler = require('./src/middleware/errorHandler');

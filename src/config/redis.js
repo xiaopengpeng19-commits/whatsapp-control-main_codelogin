@@ -1,5 +1,6 @@
 const Redis = require('redis');
-const logger = require('../utils/logger');
+const { getModule } = require('./src/utils/logger');
+const logger = getModule('app');
 
 let client;
 
