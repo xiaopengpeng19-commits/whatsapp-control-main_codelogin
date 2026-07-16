@@ -1,5 +1,5 @@
 const { validate, schemas } = require('../utils/validators');
-const logger = require('../utils/logger');
+const { getModule } = require('../utils/logger'); const logger = getModule('middleware');
 
 /**
  * Generic validation middleware factory

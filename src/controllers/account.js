@@ -1,5 +1,5 @@
 const accountService = require('../services/account');
-const logger = require('../utils/logger');
+const { getModule } = require('../utils/logger'); const logger = getModule('controller');
 const path = require('path');
 const fs = require('fs');
 const snowflake = require("../utils/snowflake");

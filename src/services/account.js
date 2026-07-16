@@ -1,6 +1,6 @@
 // account.js - 修改所有方法返回统一格式
 const snowflake = require('../utils/snowflake');
-const logger = require('../utils/logger');
+const { auth } = require('../utils/logger'); const logger = auth;
 const { getConnection, createConnection, GetAccountStateFromConnection, CloseConnection } = require('./baileys/connect');
 const { formatPhoneNumber, isValidPhoneNumber, smartFormatPhoneNumber } = require('../utils/phoneFormatter');
 const redisStorage = require('./redisStorage');

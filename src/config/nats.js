@@ -1,5 +1,5 @@
 const { connect } = require('nats');
-const logger = require('../utils/logger');
+const { nats } = require('../utils/logger'); const logger = nats;
 
 let natsConnection = null;
 

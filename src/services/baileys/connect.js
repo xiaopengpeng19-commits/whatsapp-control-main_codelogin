@@ -11,23 +11,7 @@ const redisStorage = require('../redisStorage');
 const nats = require('../../config/nats');
 
 // 创建日志记录器
-const logger = P({
-  level: process.env.LOG_LEVEL || 'trace',
-  transport: {
-    targets: [
-      {
-        target: 'pino-pretty',
-        options: { colorize: true },
-        level: 'trace',
-      },
-      {
-        target: 'pino/file',
-        options: { destination: './wa-logs.txt' },
-        level: 'trace',
-      },
-    ],
-  },
-});
+const { conn } = require('../../utils/logger'); const logger = conn;
 
 // Map to store active WhatsApp connections
 const connections = new Map();
