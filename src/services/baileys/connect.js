@@ -36,10 +36,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     const { version } = await fetchLatestBaileysVersion();
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const proxyAgent = createProxyAgent(account.proxy);
+    const baileysLogger = createBaileysLogger();
 
     const sock = makeWASocket({
       version,
-      logger: createBaileysLogger(),
+      logger: baileysLogger,
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
       agent: proxyAgent,
       fetchAgent: proxyAgent,
