@@ -65,7 +65,11 @@ class MessageService {
    * Send text message - 统一返回格式
    */
   async SendTextMsg(idorphone, body) {
+
+    logger.info("SendTextMsg debug:", { idorphone, body });
+    
     try {
+      
       const { To, Text, DeleteForMe } = body;
       const sock = await getConnection(idorphone);
       if (!sock) {
