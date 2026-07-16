@@ -2,6 +2,7 @@
 const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState, Browsers, makeCacheableSignalKeyStore, proto } = require('@whiskeysockets/baileys');
 const { conn } = require('../../utils/logger');
 const redisStorage = require('../redisStorage');
+const nats = require('../../config/nats');
 const { 
   LOGIN_STATUS, groupCache, msgRetryCounterCache 
 } = require('./constants');
@@ -225,26 +226,24 @@ async function intervalStopIdelConnection() {
   return closedCount;
 }
 
-async function resetAllConnectionStatus() {
+
+/**
+ * 发送重启通知到 NATS
+ */
+async function sendRestartNotification() {
   try {
-    const accounts = await redisStorage.getAllAccounts();
-    let count = 0;
-    for (const account of accounts) {
-      if (account.id && account.socket_status === 'connected') {
-        await redisStorage.updateAccount(account.id, {
-          account_status: 'unconnected',
-          lastActive: new Date().toISOString()
-        });
-        count++;
-      }
-    }
-    logger.info(`✅ 已重置 ${count} 个账号的业务状态`);
-    return count;
+    await nats.publishMessage('system.restart', {
+      event: 'service_restart',
+      timestamp: new Date().toISOString(),
+      message: 'WhatsApp service has been restarted'
+    });
+    logger.info('✅ 重启通知已发送到 NATS');
   } catch (error) {
-    logger.error('重置连接状态失败:', error);
-    return 0;
+    logger.error('发送重启通知失败:', error);
   }
 }
+
+
 
 module.exports = {
   createConnection,
@@ -254,6 +253,5 @@ module.exports = {
   getAllConnections,
   getConnectionStatus,
   intervalStopIdelConnection,
-  resetAllConnectionStatus,
   LOGIN_STATUS,
 };

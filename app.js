@@ -14,8 +14,7 @@ const natsConfig = require('./src/config/nats');
 
 const errorHandler = require('./src/middleware/errorHandler');
 const responseFormatter = require('./src/middleware/responseFormatter');
-const { resetAllConnectionStatus } = require('./src/services/baileys/connect');
-
+const { sendRestartNotification } = require('./src/services/baileys/connect');
 // Import routes
 const accountRoutes = require('./src/routes/account');
 const contactRoutes = require('./src/routes/contact');
@@ -104,11 +103,11 @@ server.listen(process.env.PORT || 8080, () => {
     }
   }, 15 * 60 * 1000);
 
-  // 加个小延时，避免启动瞬间压力过大
+  // 发送重启通知
   setTimeout(() => {
-    resetAllConnectionStatus().catch(logger.error);
-  }, 1000);
-  
+    sendRestartNotification().catch(console.error);
+  }, 2000);
+
   logger.info('Idle connection checker initialized');
 });
 
