@@ -652,7 +652,7 @@ async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
       const { key, update: statusUpdate } = update;
       
       // ========== 打印完整的更新数据 ==========
-      console.log(`[${accountId}] 消息状态更新详情:`, JSON.stringify({
+      logger.info(`[${accountId}] 消息状态更新详情:`, JSON.stringify({
         messageId: key?.id,
         remoteJid: key?.remoteJid,
         fromMe: key?.fromMe,

@@ -2,7 +2,7 @@
 // NATS 测试工具 - 支持发送命令和监听消息
 
 const { connect, StringCodec } = require('nats');
-
+const logger = require('./src/utils/logger');
 // NATS 连接配置
 const NATS_CONFIG = {
   servers: process.env.NATS_HOST || "127.0.0.1:4222",
@@ -33,10 +33,10 @@ async function sendCommand(nc, cmd, account, body = {}) {
     Body: body
   };
 
-  console.log(`\n📤 发送命令: ${cmd}`);
-  console.log(`   ReqId: ${reqId}`);
-  console.log(`   Account: ${account}`);
-  console.log(`   Body:`, JSON.stringify(body, null, 2));
+  logger.info(`\n📤 发送命令: ${cmd}`);
+  logger.info(`   ReqId: ${reqId}`);
+  logger.info(`   Account: ${account}`);
+  logger.info(`   Body:`, JSON.stringify(body, null, 2));
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -49,7 +49,7 @@ async function sendCommand(nc, cmd, account, body = {}) {
       clearTimeout(timeout);
       try {
         const result = JSON.parse(sc.decode(response.data));
-        console.log(`📥 收到响应:`, JSON.stringify(result, null, 2));
+        logger.info(`📥 收到响应:`, JSON.stringify(result, null, 2));
         resolve(result);
       } catch (error) {
         reject(new Error(`Failed to parse response: ${error.message}`));
@@ -65,11 +65,11 @@ async function sendCommand(nc, cmd, account, body = {}) {
  * 监听消息（持续监听，直到按 Ctrl+C 退出）
  */
 async function listenMessages(nc) {
-  console.log('\n' + '='.repeat(60));
-  console.log('📡 进入消息监听模式');
-  console.log('='.repeat(60));
-  console.log('等待接收消息...');
-  console.log('按 Ctrl+C 退出监听\n');
+  logger.info('\n' + '='.repeat(60));
+  logger.info('📡 进入消息监听模式');
+  logger.info('='.repeat(60));
+  logger.info('等待接收消息...');
+  logger.info('按 Ctrl+C 退出监听\n');
   
   const sub = nc.subscribe('msgs');
   let count = 0;
@@ -83,8 +83,8 @@ async function listenMessages(nc) {
       const data = JSON.parse(sc.decode(msg.data));
       
       // 打印原始数据（调试用，可注释掉）
-      // console.log(`\n📦 [原始数据 #${count}]`);
-      // console.log(JSON.stringify(data, null, 2));
+      // logger.info(`\n📦 [原始数据 #${count}]`);
+      // logger.info(JSON.stringify(data, null, 2));
       
       // 1️⃣ 处理状态更新（已送达、已读等）
       if (data.MessageType === 'msg_status_update') {
@@ -105,15 +105,15 @@ async function listenMessages(nc) {
         // 如果已经是已送达，但收到已读，更新为已读
         if (status === 'read') {
           messageStatusMap.set(messageId, 'read');
-          console.log(`\n👁️ [${fromMe ? '自己发送' : '对方消息'}] ${messageId} -> 已读`);
+          logger.info(`\n👁️ [${fromMe ? '自己发送' : '对方消息'}] ${messageId} -> 已读`);
           if (data.receiptTimestamp) {
-            console.log(`   时间: ${new Date(data.receiptTimestamp * 1000).toLocaleString()}`);
+            logger.info(`   时间: ${new Date(data.receiptTimestamp * 1000).toLocaleString()}`);
           }
         } else if (status === 'delivery_ack' && messageStatusMap.get(messageId) !== 'read') {
           messageStatusMap.set(messageId, 'delivery_ack');
-          console.log(`\n✅ [${fromMe ? '自己发送' : '对方消息'}] ${messageId} -> 已送达`);
+          logger.info(`\n✅ [${fromMe ? '自己发送' : '对方消息'}] ${messageId} -> 已送达`);
           if (data.receiptTimestamp) {
-            console.log(`   时间: ${new Date(data.receiptTimestamp * 1000).toLocaleString()}`);
+            logger.info(`   时间: ${new Date(data.receiptTimestamp * 1000).toLocaleString()}`);
           }
         }
         continue;
@@ -125,9 +125,9 @@ async function listenMessages(nc) {
       }
       
       // 3️⃣ 显示接收到的消息（别人发来的）
-      console.log(`\n📩 [消息 #${count}]`);
-      console.log(`  类型: ${data.MessageType || data.type || '未知'}`);
-      console.log(`  来自: ${data.pushName || '未知'} (${data.accountPhone || data.accountId || 'N/A'})`);
+      logger.info(`\n📩 [消息 #${count}]`);
+      logger.info(`  类型: ${data.MessageType || data.type || '未知'}`);
+      logger.info(`  来自: ${data.pushName || '未知'} (${data.accountPhone || data.accountId || 'N/A'})`);
       
       // 获取文本内容
       let text = '';
@@ -139,29 +139,29 @@ async function listenMessages(nc) {
                data.message.imageMessage?.caption ||
                '(非文本消息)';
       }
-      console.log(`  内容: ${text}`);
+      logger.info(`  内容: ${text}`);
       
       // 显示媒体信息
       if (data.mediaInfo) {
         if (data.mediaInfo.mimetype) {
-          console.log(`  媒体类型: ${data.mediaInfo.mimetype}`);
+          logger.info(`  媒体类型: ${data.mediaInfo.mimetype}`);
         }
         if (data.mediaInfo.url) {
-          console.log(`  媒体URL: ${data.mediaInfo.url}`);
+          logger.info(`  媒体URL: ${data.mediaInfo.url}`);
         }
         if (data.mediaInfo.fileName) {
-          console.log(`  文件名: ${data.mediaInfo.fileName}`);
+          logger.info(`  文件名: ${data.mediaInfo.fileName}`);
         }
       }
       
       if (data.timestamp) {
-        console.log(`  时间: ${new Date(data.timestamp * 1000).toLocaleString()}`);
+        logger.info(`  时间: ${new Date(data.timestamp * 1000).toLocaleString()}`);
       }
-      console.log(`  消息ID: ${data.messageId}`);
+      logger.info(`  消息ID: ${data.messageId}`);
       
     } catch (error) {
-      console.error('❌ 解析消息失败:', error.message);
-      console.error('原始数据:', msg.data);
+      logger.error('❌ 解析消息失败:', error.message);
+      logger.error('原始数据:', msg.data);
     }
   }
 }
@@ -170,9 +170,9 @@ async function listenMessages(nc) {
  * 测试发送文本消息
  */
 async function testSendTextMsg(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 发送文本消息 (SendTextMsg)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 发送文本消息 (SendTextMsg)');
+  logger.info('='.repeat(50));
 
   const body = {
     To: "8618939797045",
@@ -182,10 +182,10 @@ async function testSendTextMsg(nc) {
 
   try {
     const result = await sendCommand(nc, 'SendTextMsg', '8615239719312', body);
-    console.log('✅ 文本消息发送成功');
+    logger.info('✅ 文本消息发送成功');
     return result;
   } catch (error) {
-    console.error('❌ 文本消息发送失败:', error.message);
+    logger.error('❌ 文本消息发送失败:', error.message);
     throw error;
   }
 }
@@ -194,9 +194,9 @@ async function testSendTextMsg(nc) {
  * 测试发送图片消息
  */
 async function testSendImageMsg(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 发送图片消息 (SendImageMsg)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 发送图片消息 (SendImageMsg)');
+  logger.info('='.repeat(50));
 
   const base64Image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
   
@@ -209,10 +209,10 @@ async function testSendImageMsg(nc) {
 
   try {
     const result = await sendCommand(nc, 'SendImageMsg', '8615239719312', body);
-    console.log('✅ 图片消息发送成功');
+    logger.info('✅ 图片消息发送成功');
     return result;
   } catch (error) {
-    console.error('❌ 图片消息发送失败:', error.message);
+    logger.error('❌ 图片消息发送失败:', error.message);
     throw error;
   }
 }
@@ -221,9 +221,9 @@ async function testSendImageMsg(nc) {
  * 测试发送链接消息（带按钮）
  */
 async function testSendLinkMessage(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 发送链接消息 (SendLinkMessage)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 发送链接消息 (SendLinkMessage)');
+  logger.info('='.repeat(50));
 
   const body = {
     to: "8618939797045",
@@ -242,10 +242,10 @@ async function testSendLinkMessage(nc) {
 
   try {
     const result = await sendCommand(nc, 'SendLinkMessage', '8615239719312', body);
-    console.log('✅ 链接消息发送成功');
+    logger.info('✅ 链接消息发送成功');
     return result;
   } catch (error) {
-    console.error('❌ 链接消息发送失败:', error.message);
+    logger.error('❌ 链接消息发送失败:', error.message);
     throw error;
   }
 }
@@ -254,16 +254,16 @@ async function testSendLinkMessage(nc) {
  * 测试获取账号状态
  */
 async function testGetAccountState(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 获取账号状态 (GetAccountState)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 获取账号状态 (GetAccountState)');
+  logger.info('='.repeat(50));
 
   try {
     const result = await sendCommand(nc, 'GetAccountState', '8615239719312', {});
-    console.log('✅ 账号状态:', result);
+    logger.info('✅ 账号状态:', result);
     return result;
   } catch (error) {
-    console.error('❌ 获取账号状态失败:', error.message);
+    logger.error('❌ 获取账号状态失败:', error.message);
     throw error;
   }
 }
@@ -272,16 +272,16 @@ async function testGetAccountState(nc) {
  * 测试上线账号
  */
 async function testOnline(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 上线账号 (Online)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 上线账号 (Online)');
+  logger.info('='.repeat(50));
 
   try {
     const result = await sendCommand(nc, 'Online', '8615239719312', {});
-    console.log('✅ 上线结果:', result);
+    logger.info('✅ 上线结果:', result);
     return result;
   } catch (error) {
-    console.error('❌ 上线失败:', error.message);
+    logger.error('❌ 上线失败:', error.message);
     throw error;
   }
 }
@@ -290,16 +290,16 @@ async function testOnline(nc) {
  * 测试获取联系人列表
  */
 async function testContactsList(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 获取联系人列表 (ContactsList)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 获取联系人列表 (ContactsList)');
+  logger.info('='.repeat(50));
 
   try {
     const result = await sendCommand(nc, 'ContactsList', '8615239719312', {});
-    console.log('✅ 联系人列表:', JSON.stringify(result, null, 2));
+    logger.info('✅ 联系人列表:', JSON.stringify(result, null, 2));
     return result;
   } catch (error) {
-    console.error('❌ 获取联系人列表失败:', error.message);
+    logger.error('❌ 获取联系人列表失败:', error.message);
     throw error;
   }
 }
@@ -308,16 +308,16 @@ async function testContactsList(nc) {
  * 测试获取账号列表
  */
 async function testGetAccountList(nc) {
-  console.log('\n' + '='.repeat(50));
-  console.log('🧪 测试: 获取账号列表 (GetAccoutList)');
-  console.log('='.repeat(50));
+  logger.info('\n' + '='.repeat(50));
+  logger.info('🧪 测试: 获取账号列表 (GetAccoutList)');
+  logger.info('='.repeat(50));
 
   try {
     const result = await sendCommand(nc, 'GetAccoutList', '', {});
-    console.log('✅ 账号列表:', JSON.stringify(result, null, 2));
+    logger.info('✅ 账号列表:', JSON.stringify(result, null, 2));
     return result;
   } catch (error) {
-    console.error('❌ 获取账号列表失败:', error.message);
+    logger.error('❌ 获取账号列表失败:', error.message);
     throw error;
   }
 }
@@ -329,20 +329,20 @@ async function main() {
   const args = process.argv.slice(2);
   const mode = args[0] || 'all';
   
-  console.log('🚀 NATS 测试客户端');
-  console.log('='.repeat(50));
-  console.log(`模式: ${mode}`);
-  console.log('NATS 服务器:', NATS_CONFIG.servers);
-  console.log('用户名:', NATS_CONFIG.user);
-  console.log('='.repeat(50));
+  logger.info('🚀 NATS 测试客户端');
+  logger.info('='.repeat(50));
+  logger.info(`模式: ${mode}`);
+  logger.info('NATS 服务器:', NATS_CONFIG.servers);
+  logger.info('用户名:', NATS_CONFIG.user);
+  logger.info('='.repeat(50));
 
   let nc = null;
 
   try {
     // 连接 NATS
-    console.log('\n🔗 正在连接 NATS...');
+    logger.info('\n🔗 正在连接 NATS...');
     nc = await connect(NATS_CONFIG);
-    console.log('✅ NATS 连接成功！');
+    logger.info('✅ NATS 连接成功！');
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -352,16 +352,16 @@ async function main() {
       
     } else if (mode === 'send') {
       // 仅发送模式
-      console.log('\n📤 发送测试消息...');
+      logger.info('\n📤 发送测试消息...');
       await testGetAccountState(nc);
       await testOnline(nc);
       await testSendTextMsg(nc);
       await testSendLinkMessage(nc);
-      console.log('\n✅ 发送完成！');
+      logger.info('\n✅ 发送完成！');
       
     } else {
       // 完整测试模式：先发送，然后监听
-      console.log('\n📤 发送测试消息...');
+      logger.info('\n📤 发送测试消息...');
       await testGetAccountState(nc);
       await testOnline(nc);
       await testContactsList(nc);
@@ -374,22 +374,22 @@ async function main() {
     }
 
   } catch (error) {
-    console.error('\n❌ 测试失败:', error.message);
+    logger.error('\n❌ 测试失败:', error.message);
     if (error.stack) {
-      console.error(error.stack);
+      logger.error(error.stack);
     }
   } finally {
     if (nc) {
-      console.log('\n🔌 关闭 NATS 连接...');
+      logger.info('\n🔌 关闭 NATS 连接...');
       await nc.drain();
-      console.log('✅ NATS 连接已关闭');
+      logger.info('✅ NATS 连接已关闭');
     }
     process.exit(0);
   }
 }
 
 // 使用说明
-console.log(`
+logger.info(`
 📖 使用方法:
   node test_nats.js           - 完整测试（发送 + 监听）
   node test_nats.js send      - 仅发送测试消息
@@ -398,7 +398,7 @@ console.log(`
 
 // 如果直接运行此文件，执行主函数
 if (require.main === module) {
-  main().catch(console.error);
+  main().catch(logger.error);
 }
 
 module.exports = {

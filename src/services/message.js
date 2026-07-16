@@ -22,7 +22,7 @@ class MessageService {
       jid,
       []
     );
-    console.log("response:", response);
+    logger.info("response:", response);
     return response;
   }
 
@@ -39,7 +39,7 @@ class MessageService {
       const result = await this.SendButtonMessage(data);
       return result;
     } catch (e) {
-      console.log(e);
+      logger.info(e);
       return { code: 500, message: e.message, data: null };
     }
   }
@@ -54,7 +54,7 @@ class MessageService {
     await sock.sendPresenceUpdate("composing", targetJid);
     await delay(500);
     let response = await sock.sendMessage(targetJid, msg);
-    console.log("response:", response);
+    logger.info("response:", response);
     if (DeleteForMe) {
       this.deleteMessage(sock, jid, response.key.id);
     }
@@ -84,7 +84,7 @@ class MessageService {
         }
       };
     } catch (error) {
-      console.log("SendTextMsg error:", error);
+      logger.info("SendTextMsg error:", error);
       return { code: 500, message: error.message, data: { to: To } };
     }
   }
@@ -182,7 +182,7 @@ class MessageService {
         return { code: 500, message: "document not implemented", data: null };
       }
 
-      console.log("sendok! ", toid);
+      logger.info("sendok! ", toid);
       return {
         code: 200,
         message: "success",
@@ -294,7 +294,7 @@ class MessageService {
         }
       };
     } catch (error) {
-      console.error("SendButtonMessage toid: ", toid, " error: ", error);
+      logger.error("SendButtonMessage toid: ", toid, " error: ", error);
       return {
         code: 500,
         message: error.message || String(error),

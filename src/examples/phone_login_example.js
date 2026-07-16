@@ -6,7 +6,7 @@
  */
 
 const axios = require('axios');
-
+const logger = require('../utils/logger');
 // 服务器基础 URL
 const BASE_URL = 'http://localhost:8080/api';
 
@@ -15,7 +15,7 @@ const BASE_URL = 'http://localhost:8080/api';
  */
 async function basicPhoneLogin() {
   try {
-    console.log('=== 基本手机号码登录示例 ===');
+    logger.info('=== 基本手机号码登录示例 ===');
     
     const response = await axios.post(`${BASE_URL}/accounts/loginByPhone`, {
       phoneNumber: '8613800138000',  // 中国手机号码示例
@@ -23,19 +23,19 @@ async function basicPhoneLogin() {
     });
 
     if (response.data.success) {
-      console.log('✅ 登录请求成功');
-      console.log('📱 手机号码:', response.data.phoneNumber);
-      console.log('🔢 配对码:', response.data.pairingCode);
-      console.log('📝 说明:', response.data.message);
-      console.log('📋 操作步骤:');
+      logger.info('✅ 登录请求成功');
+      logger.info('📱 手机号码:', response.data.phoneNumber);
+      logger.info('🔢 配对码:', response.data.pairingCode);
+      logger.info('📝 说明:', response.data.message);
+      logger.info('📋 操作步骤:');
       response.data.instructions.forEach((instruction, index) => {
-        console.log(`   ${instruction}`);
+        logger.info(`   ${instruction}`);
       });
     } else {
-      console.log('❌ 登录失败:', response.data.message);
+      logger.info('❌ 登录失败:', response.data.message);
     }
   } catch (error) {
-    console.error('❌ 请求失败:', error.response?.data || error.message);
+    logger.error('❌ 请求失败:', error.response?.data || error.message);
   }
 }
 
@@ -44,7 +44,7 @@ async function basicPhoneLogin() {
  */
 async function phoneLoginWithProxy() {
   try {
-    console.log('\n=== 使用代理的手机号码登录示例 ===');
+    logger.info('\n=== 使用代理的手机号码登录示例 ===');
     
     const response = await axios.post(`${BASE_URL}/accounts/loginByPhone`, {
       phoneNumber: '+1-234-567-8901',           // 美国手机号码格式
@@ -55,13 +55,13 @@ async function phoneLoginWithProxy() {
     });
 
     if (response.data.success) {
-      console.log('✅ 代理登录请求成功');
-      console.log('🌐 使用代理: socks5://127.0.0.1:1080');
-      console.log('📱 格式化手机号码:', response.data.phoneNumber);
-      console.log('🔢 配对码:', response.data.pairingCode);
+      logger.info('✅ 代理登录请求成功');
+      logger.info('🌐 使用代理: socks5://127.0.0.1:1080');
+      logger.info('📱 格式化手机号码:', response.data.phoneNumber);
+      logger.info('🔢 配对码:', response.data.pairingCode);
     }
   } catch (error) {
-    console.error('❌ 代理登录失败:', error.response?.data || error.message);
+    logger.error('❌ 代理登录失败:', error.response?.data || error.message);
   }
 }
 
@@ -69,7 +69,7 @@ async function phoneLoginWithProxy() {
  * 示例 3: 多种手机号码格式处理
  */
 async function phoneFormatExamples() {
-  console.log('\n=== 手机号码格式处理示例 ===');
+  logger.info('\n=== 手机号码格式处理示例 ===');
   
   const phoneNumbers = [
     '13800138000',              // 中国本地格式
@@ -81,7 +81,7 @@ async function phoneFormatExamples() {
 
   for (const phone of phoneNumbers) {
     try {
-      console.log(`\n📞 测试号码: ${phone}`);
+      logger.info(`\n📞 测试号码: ${phone}`);
       
       // 根据号码判断可能的国家代码
       let countryCode = '86';  // 默认中国
@@ -97,11 +97,11 @@ async function phoneFormatExamples() {
       });
 
       if (response.data.success) {
-        console.log(`   ✅ 格式化成功: ${response.data.phoneNumber}`);
-        console.log(`   🔢 配对码: ${response.data.pairingCode}`);
+        logger.info(`   ✅ 格式化成功: ${response.data.phoneNumber}`);
+        logger.info(`   🔢 配对码: ${response.data.pairingCode}`);
       }
     } catch (error) {
-      console.log(`   ❌ 格式化失败: ${error.response?.data?.message || error.message}`);
+      logger.info(`   ❌ 格式化失败: ${error.response?.data?.message || error.message}`);
     }
     
     // 避免请求过于频繁
@@ -113,7 +113,7 @@ async function phoneFormatExamples() {
  * 示例 4: 错误处理
  */
 async function errorHandlingExample() {
-  console.log('\n=== 错误处理示例 ===');
+  logger.info('\n=== 错误处理示例 ===');
   
   const testCases = [
     { phoneNumber: '', description: '空手机号码' },
@@ -124,16 +124,16 @@ async function errorHandlingExample() {
 
   for (const testCase of testCases) {
     try {
-      console.log(`\n🧪 测试: ${testCase.description}`);
+      logger.info(`\n🧪 测试: ${testCase.description}`);
       
       const response = await axios.post(`${BASE_URL}/account/loginByPhone`, {
         phoneNumber: testCase.phoneNumber,
         defaultCountryCode: '86'
       });
 
-      console.log('   ⚠️  意外成功:', response.data);
+      logger.info('   ⚠️  意外成功:', response.data);
     } catch (error) {
-      console.log(`   ✅ 正确捕获错误: ${error.response?.data?.message || error.message}`);
+      logger.info(`   ✅ 正确捕获错误: ${error.response?.data?.message || error.message}`);
     }
   }
 }
@@ -142,11 +142,11 @@ async function errorHandlingExample() {
  * 完整使用流程示例
  */
 async function completeWorkflowExample() {
-  console.log('\n=== 完整使用流程示例 ===');
+  logger.info('\n=== 完整使用流程示例 ===');
   
   try {
     // 步骤 1: 发起登录
-    console.log('1️⃣ 发起手机号码登录...');
+    logger.info('1️⃣ 发起手机号码登录...');
     const loginResponse = await axios.post(`${BASE_URL}/account/loginByPhone`, {
       phoneNumber: '8613800138000',
       defaultCountryCode: '86'
@@ -155,29 +155,29 @@ async function completeWorkflowExample() {
     if (loginResponse.data.success) {
       const { accountId, phoneNumber, pairingCode } = loginResponse.data;
       
-      console.log(`✅ 配对码生成成功: ${pairingCode}`);
-      console.log(`📋 账户ID: ${accountId}`);
+      logger.info(`✅ 配对码生成成功: ${pairingCode}`);
+      logger.info(`📋 账户ID: ${accountId}`);
       
       // 步骤 2: 提示用户操作
-      console.log('\n2️⃣ 请在您的手机上完成以下操作:');
+      logger.info('\n2️⃣ 请在您的手机上完成以下操作:');
       loginResponse.data.instructions.forEach(instruction => {
-        console.log(`   ${instruction}`);
+        logger.info(`   ${instruction}`);
       });
       
       // 步骤 3: 等待连接（实际应用中可以通过 webhook 或轮询检查状态）
-      console.log('\n3️⃣ 等待用户完成配对...');
-      console.log('   （在实际应用中，您可以通过 callbackUrl 接收连接成功通知）');
+      logger.info('\n3️⃣ 等待用户完成配对...');
+      logger.info('   （在实际应用中，您可以通过 callbackUrl 接收连接成功通知）');
       
       // 步骤 4: 检查账户状态（模拟）
-      console.log('\n4️⃣ 检查账户状态...');
+      logger.info('\n4️⃣ 检查账户状态...');
       // 这里可以添加账户状态检查的代码
       
     } else {
-      console.log('❌ 登录失败:', loginResponse.data.message);
+      logger.info('❌ 登录失败:', loginResponse.data.message);
     }
     
   } catch (error) {
-    console.error('❌ 流程执行失败:', error.response?.data || error.message);
+    logger.error('❌ 流程执行失败:', error.response?.data || error.message);
   }
 }
 
@@ -185,7 +185,7 @@ async function completeWorkflowExample() {
  * 运行所有示例
  */
 async function runAllExamples() {
-  console.log('🚀 WhatsApp 手机号码登录示例集合\n');
+  logger.info('🚀 WhatsApp 手机号码登录示例集合\n');
   
   // 运行各个示例
   await basicPhoneLogin();
@@ -194,15 +194,15 @@ async function runAllExamples() {
   await errorHandlingExample();
   await completeWorkflowExample();
   
-  console.log('\n✨ 所有示例执行完成！');
-  console.log('\n📚 更多信息请参考:');
-  console.log('   - Baileys 文档: https://baileys.wiki/docs/socket/connecting');
-  console.log('   - 项目文档: README.md');
+  logger.info('\n✨ 所有示例执行完成！');
+  logger.info('\n📚 更多信息请参考:');
+  logger.info('   - Baileys 文档: https://baileys.wiki/docs/socket/connecting');
+  logger.info('   - 项目文档: README.md');
 }
 
 // 如果直接运行此文件，则执行所有示例
 if (require.main === module) {
-  runAllExamples().catch(console.error);
+  runAllExamples().catch(logger.error);
 }
 
 module.exports = {

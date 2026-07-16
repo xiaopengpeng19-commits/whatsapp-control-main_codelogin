@@ -38,7 +38,7 @@ class AccountController {
       };
 
       // 调用服务层方法
-      console.log("loginData:",loginData);
+      logger.info("loginData:",loginData);
       const result = await accountService.loginWithPhoneNumber(loginData);
 
       // 如果有回调URL，在成功时调用
@@ -97,7 +97,7 @@ class AccountController {
       };
       let callbackfun=null;
       callbackfun=async()=>{
-          console.log('callbackurl_callbackfun:',callbackurl);
+          logger.info('callbackurl_callbackfun:',callbackurl);
           if(callbackurl){
             const axios = require('axios');
             const axiosInstance = axios.create({
@@ -109,7 +109,7 @@ class AccountController {
             try{
               const response = await axiosInstance.get(callbackurl);
             }catch(error){
-              console.log("error:",error)
+              logger.info("error:",error)
             }
            
           }
@@ -117,7 +117,7 @@ class AccountController {
       
       // Connect to WhatsApp and generate QR code
       const result = await accountService.GetQRCode(account,callbackfun);
-      console.log('resultincotroller:',result);
+      logger.info('resultincotroller:',result);
       if(result.Success){
         ctx.body = {
           status: 200,
@@ -161,9 +161,9 @@ class AccountController {
       };
       let callbackfun=null;
       
-        console.log("callbackurl:",callbackurl)
+        logger.info("callbackurl:",callbackurl)
         callbackfun=async()=>{
-          console.log('callbackurl:',callbackurl);
+          logger.info('callbackurl:',callbackurl);
           if(callbackurl){
             const axios = require('axios');
             const axiosInstance = axios.create({
@@ -175,7 +175,7 @@ class AccountController {
             try{
               const response = await axiosInstance.get(callbackurl);
             }catch(error){
-              console.log("error:",error)
+              logger.info("error:",error)
             }
            
           }
@@ -183,7 +183,7 @@ class AccountController {
       
       // Connect to WhatsApp and generate QR code
       const result = await accountService.getPairCode(account,callbackfun);
-      console.log('result get pair  code',result);
+      logger.info('result get pair  code',result);
       if(result.status==403){
         ctx.body = {
           status: 200,
@@ -215,7 +215,7 @@ class AccountController {
           data: 'Account not connected'
         };
       }
-      console.log("phones:",phones)
+      logger.info("phones:",phones)
       if(phones.length==0){
         ctx.body = {
           status: 500,

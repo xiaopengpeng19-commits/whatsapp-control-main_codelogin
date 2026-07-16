@@ -159,7 +159,7 @@ async function upsertAccount(account) {
     if (oldData && Object.keys(oldData).length > 0) {
       await client.del(oldAccountKey);
       await client.sRem(ACCOUNT_SET, existingPhoneAccountId);
-      console.log(`[upsertAccount] 删除重复账号: ${existingPhoneAccountId} (phone: ${account.phoneNumber})`);
+      logger.info(`[upsertAccount] 删除重复账号: ${existingPhoneAccountId} (phone: ${account.phoneNumber})`);
     }
   }
   
@@ -239,7 +239,7 @@ async function updateAccount(accountId, fields) {
       await nats.publishMessage(`connection`, connectionData);
     } catch (natsError) {
       // NATS 发送失败不影响主流程
-      console.error('NATS publish failed in updateAccount:', natsError);
+      logger.error('NATS publish failed in updateAccount:', natsError);
     }
   }
 

@@ -48,9 +48,9 @@ class AccountService {
             account_status: 'normal',
             sessionId: sessionId
           });
-          console.log('Account upserted to Redis:', account.phoneNumber);
+          logger.info('Account upserted to Redis:', account.phoneNumber);
         } catch (dbError) {
-          console.error('Failed to save/update account to Redis:', dbError);
+          logger.error('Failed to save/update account to Redis:', dbError);
         }
       }
 
@@ -160,7 +160,7 @@ class AccountService {
    * Connect an account - Get QR Code
    */
   async GetQRCode(accountin, data) {
-    console.log("GetQRCode:", accountin, data);
+    logger.info("GetQRCode:", accountin, data);
     const { Proxy, SessionId } = data;
     let account = {
       id: snowflake.nextId().toString(),
@@ -170,7 +170,7 @@ class AccountService {
       proxy: Proxy,
       socket_status: 'disconnected'
     };
-    console.log("account:", account);
+    logger.info("account:", account);
     let callbackfun = null;
 
     callbackfun = async () => {
@@ -184,15 +184,15 @@ class AccountService {
           account_status: 'normal',
           sessionId: SessionId
         });
-        console.log('Account upserted to Redis:', account.phoneNumber);
+        logger.info('Account upserted to Redis:', account.phoneNumber);
       } catch (dbError) {
-        console.error('Failed to save/update account to Redis:', dbError);
+        logger.error('Failed to save/update account to Redis:', dbError);
       }
     }
 
-    console.log("callbackfuncgetQrCode", account);
+    logger.info("callbackfuncgetQrCode", account);
     let result = await createConnection(account, callbackfun);
-    console.log('resultgetQrCode:', result);
+    logger.info('resultgetQrCode:', result);
 
     if (result.status == 'failed') {
       return {
@@ -218,9 +218,9 @@ class AccountService {
   }
 
   async getPairCode(account, callbackurl) {
-    console.log("callbackfuncgetPairCode", callbackurl);
+    logger.info("callbackfuncgetPairCode", callbackurl);
     let result = await createConnection(account, callbackurl, 5, true);
-    console.log('resultgetPairCode:', result);
+    logger.info('resultgetPairCode:', result);
 
     if (result.status == 500) {
       return {
@@ -292,10 +292,10 @@ class AccountService {
     try {
       const sockstatus = await GetAccountStateFromConnection(account.phoneNumber);
       if (sockstatus) {
-        console.log("sockstatus:", sockstatus);
+        logger.info("sockstatus:", sockstatus);
         return statusmap[sockstatus.account_status] || 1;
       }
-      console.log("account.account_status:", account.account_status);
+      logger.info("account.account_status:", account.account_status);
       if (account.account_status == 'banned') {
         return 5;
       } else if (account.account_status == 'expired') {
@@ -355,7 +355,7 @@ class AccountService {
       const phoneNumber = Phone.replace(/[^\d]/g, '');
       const jid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
 
-      console.log(`尝试添加联系人: ${phoneNumber} (${jid})`);
+      logger.info(`尝试添加联系人: ${phoneNumber} (${jid})`);
 
       const [onWhatsAppResult] = await sock.onWhatsApp(phoneNumber);
 
@@ -367,14 +367,14 @@ class AccountService {
         };
       }
 
-      console.log(`手机号 ${phoneNumber} 已在 WhatsApp 上注册`);
+      logger.info(`手机号 ${phoneNumber} 已在 WhatsApp 上注册`);
 
       if (Message) {
         try {
           await sock.sendMessage(jid, { text: Message });
-          console.log(`欢迎消息已发送给 ${phoneNumber}`);
+          logger.info(`欢迎消息已发送给 ${phoneNumber}`);
         } catch (msgError) {
-          console.log(`发送消息失败，但联系人验证成功: ${msgError.message}`);
+          logger.info(`发送消息失败，但联系人验证成功: ${msgError.message}`);
         }
       }
 
@@ -388,7 +388,7 @@ class AccountService {
         }
       };
     } catch (error) {
-      console.error(`添加联系人失败: ${error.message}`);
+      logger.error(`添加联系人失败: ${error.message}`);
       return { code: 500, message: error.message, data: null };
     }
   }
@@ -411,13 +411,13 @@ class AccountService {
         contact.Phone.replace(/[^\d]/g, '')
       );
 
-      console.log(`开始批量验证 ${phoneNumbers.length} 个手机号...`);
+      logger.info(`开始批量验证 ${phoneNumbers.length} 个手机号...`);
 
       let onWhatsAppResults = [];
       try {
         onWhatsAppResults = await sock.onWhatsApp(...phoneNumbers);
       } catch (error) {
-        console.error(`批量验证失败: ${error.message}`);
+        logger.error(`批量验证失败: ${error.message}`);
         return { code: 500, message: `批量验证失败: ${error.message}`, data: null };
       }
 
@@ -444,9 +444,9 @@ class AccountService {
           if (Message) {
             try {
               await sock.sendMessage(jid, { text: Message });
-              console.log(`欢迎消息已发送给 ${phoneNumber}`);
+              logger.info(`欢迎消息已发送给 ${phoneNumber}`);
             } catch (msgError) {
-              console.log(`发送消息失败: ${msgError.message}`);
+              logger.info(`发送消息失败: ${msgError.message}`);
             }
           }
 
@@ -463,7 +463,7 @@ class AccountService {
               contactAdded: true
             });
           } catch (dbError) {
-            console.log(`保存联系人 ${phoneNumber} 到 Redis 失败: ${dbError.message}`);
+            logger.info(`保存联系人 ${phoneNumber} 到 Redis 失败: ${dbError.message}`);
           }
 
           results.push({
@@ -474,7 +474,7 @@ class AccountService {
             errMsg: ""
           });
 
-          console.log(`成功添加联系人: ${phoneNumber}`);
+          logger.info(`成功添加联系人: ${phoneNumber}`);
         } catch (error) {
           results.push({
             phone: phoneNumber,
@@ -482,7 +482,7 @@ class AccountService {
             success: false,
             errMsg: error.message
           });
-          console.error(`处理联系人 ${phoneNumber} 失败: ${error.message}`);
+          logger.error(`处理联系人 ${phoneNumber} 失败: ${error.message}`);
         }
 
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -504,7 +504,7 @@ class AccountService {
         }
       };
     } catch (error) {
-      console.error(`批量添加联系人失败: ${error.message}`);
+      logger.error(`批量添加联系人失败: ${error.message}`);
       return { code: 500, message: error.message, data: null };
     }
   }

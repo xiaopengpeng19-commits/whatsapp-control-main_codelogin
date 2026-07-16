@@ -40,7 +40,7 @@ async function connectNats() {
 }
 
 async function cmdpoll() {
-  console.log("cmdpoll");
+  logger.info("cmdpoll");
   
   // 直接使用已建立的连接，而不是重新获取
   if (!natsConnection) {
@@ -70,7 +70,7 @@ async function cmdpoll() {
     "SendLinkMessage": (Account, Body) => messageService.SendLinkMessage.call(messageService, Account, Body),
   };
   
-  console.log("cmdssubscribe");
+  logger.info("cmdssubscribe");
   
   // 使用 request/reply 模式处理消息
   natsConnection.subscribe('cmds', {
@@ -82,17 +82,17 @@ async function cmdpoll() {
       
       try {
         const data = JSON.parse(msg.data);
-        console.log("data:", data);
+        logger.info("data:", data);
         const { Cmd, ReqId, Account, Body } = data;
         let jid = Account;
         
         if (Cmds[Cmd]) {
           const result = await Cmds[Cmd](jid, Body);
-          console.log(`Command result:`, result);
+          logger.info(`Command result:`, result);
           // 使用 respond 直接返回结果给调用者
           msg.respond(JSON.stringify(result));
         } else {
-          console.log(`Command not found: ${Cmd}`);
+          logger.info(`Command not found: ${Cmd}`);
           // 直接返回错误响应
           msg.respond(JSON.stringify({ Success: false, ErrMsg: "cmd not found" }));
         }
@@ -119,7 +119,7 @@ async function cmdpoll() {
  * @returns {Promise<Object>} - NATS connection
  */
 async function getConnection() {
-  console.log("getConnection");
+  logger.info("getConnection");
   if (!natsConnection) {
     return await connectNats();
   }

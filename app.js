@@ -105,7 +105,7 @@ server.listen(process.env.PORT || 8080, () => {
 
   // 加个小延时，避免启动瞬间压力过大
   setTimeout(() => {
-    resetAllConnectionStatus().catch(console.error);
+    resetAllConnectionStatus().catch(logger.error);
   }, 1000);
   
   logger.info('Idle connection checker initialized');
@@ -125,18 +125,18 @@ process.on('SIGINT', async () => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  console.error('================ UNCAUGHT EXCEPTION ================');
-  console.error(err.message);
-  console.error(err.stack);
-  console.error('====================================================');
+  logger.error('================ UNCAUGHT EXCEPTION ================');
+  logger.error(err.message);
+  logger.error(err.stack);
+  logger.error('====================================================');
   logger.error('Uncaught Exception:', { error: err.message, stack: err.stack });
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('================ UNHANDLED REJECTION ================');
-  console.error('Reason:', reason);
-  console.error('Promise:', promise);
-  console.error('=====================================================');
+  logger.error('================ UNHANDLED REJECTION ================');
+  logger.error('Reason:', reason);
+  logger.error('Promise:', promise);
+  logger.error('=====================================================');
   logger.error('Unhandled Rejection:', { reason: reason?.message || String(reason) });
 });
 

@@ -38,7 +38,7 @@ class GroupController {
       }
  
       const groupcreated=await connection.groupCreate(title,['8615936208327@s.whatsapp.net']);
-      console.log('groupcreated',groupcreated);
+      logger.info('groupcreated',groupcreated);
       if(!groupcreated){
         ctx.body={
           status:500,

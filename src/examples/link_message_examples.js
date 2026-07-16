@@ -1,5 +1,5 @@
 const MessageService = require('../services/message');
-
+const logger = require('../utils/logger');
 // 示例：如何使用不同的链接消息发送方式
 
 // 方式1: 模板消息 - 适合正式商务场景
@@ -29,7 +29,7 @@ async function exampleTemplateMessage() {
   };
   
   const result = await MessageService.SendLinkMessageTemplate("account_id", data);
-  console.log("模板消息发送结果:", result);
+  logger.info("模板消息发送结果:", result);
 }
 
 // 方式2: 列表消息 - 适合多个选项的场景
@@ -43,7 +43,7 @@ async function exampleListMessage() {
   };
   
   const result = await MessageService.SendLinkMessageList("account_id", data);
-  console.log("列表消息发送结果:", result);
+  logger.info("列表消息发送结果:", result);
 }
 
 // 方式3: 交互式消息 - 适合需要用户交互的场景
@@ -80,7 +80,7 @@ async function exampleInteractiveMessage() {
   };
   
   const result = await MessageService.SendLinkMessageInteractive("account_id", data);
-  console.log("交互式消息发送结果:", result);
+  logger.info("交互式消息发送结果:", result);
 }
 
 // 方式4: 卡片式消息 - 适合产品展示
@@ -95,7 +95,7 @@ async function exampleCardMessage() {
   };
   
   const result = await MessageService.SendLinkMessageCard("account_id", data);
-  console.log("卡片式消息发送结果:", result);
+  logger.info("卡片式消息发送结果:", result);
 }
 
 // 方式5: 简单文本消息 - 适合快速分享链接
@@ -108,7 +108,7 @@ async function exampleSimpleMessage() {
   };
   
   const result = await MessageService.SendLinkMessageSimple("account_id", data);
-  console.log("简单文本消息发送结果:", result);
+  logger.info("简单文本消息发送结果:", result);
 }
 
 // 方式6: 文档消息 - 适合分享文档和链接
@@ -122,34 +122,34 @@ async function exampleDocumentMessage() {
   };
   
   const result = await MessageService.SendLinkMessageDocument("account_id", data);
-  console.log("文档消息发送结果:", result);
+  logger.info("文档消息发送结果:", result);
 }
 
 // 使用示例
 async function runExamples() {
-  console.log("=== WhatsApp 链接消息发送示例 ===\n");
+  logger.info("=== WhatsApp 链接消息发送示例 ===\n");
   
   try {
-    console.log("1. 发送模板消息...");
+    logger.info("1. 发送模板消息...");
     await exampleTemplateMessage();
     
-    console.log("\n2. 发送列表消息...");
+    logger.info("\n2. 发送列表消息...");
     await exampleListMessage();
     
-    console.log("\n3. 发送交互式消息...");
+    logger.info("\n3. 发送交互式消息...");
     await exampleInteractiveMessage();
     
-    console.log("\n4. 发送卡片式消息...");
+    logger.info("\n4. 发送卡片式消息...");
     await exampleCardMessage();
     
-    console.log("\n5. 发送简单文本消息...");
+    logger.info("\n5. 发送简单文本消息...");
     await exampleSimpleMessage();
     
-    console.log("\n6. 发送文档消息...");
+    logger.info("\n6. 发送文档消息...");
     await exampleDocumentMessage();
     
   } catch (error) {
-    console.error("示例执行出错:", error);
+    logger.error("示例执行出错:", error);
   }
 }
 
