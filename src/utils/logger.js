@@ -36,6 +36,7 @@ const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 // ========== 基础配置 ==========
 const baseLogger = pino({
   level: LOG_LEVEL,
+  // 文件日志也格式化
   transport: {
     targets: [
       {
@@ -45,12 +46,8 @@ const baseLogger = pino({
           translateTime: 'SYS:standard',
           ignore: 'pid,hostname',
           messageFormat: '[{module}] {msg}',
+          destination: './app.log',  // 写入文件
         },
-        level: LOG_LEVEL,
-      },
-      {
-        target: 'pino/file',
-        options: { destination: './app.log' },
         level: 'info',
       },
     ],
