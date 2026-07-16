@@ -80,7 +80,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
   if (statusCode === 403 || statusCode === 401) sock.socket_status = 'disconnected';
   
-  updateAccountStatus(accountId, account.phoneNumber, status, sock.socket_status || 'disconnected');
+  updateAccountStatus(accountId, account.phoneNumber, status, sock.socket_status || 'connected');
   cleanupSession(accountId);
   ctx.connections.delete(accountId);
   rejectFunc(new Error(`连接失败: ${lastDisconnect?.error?.message || '未知错误'}`));
