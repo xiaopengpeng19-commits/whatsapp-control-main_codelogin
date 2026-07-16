@@ -40,7 +40,6 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
     const sock = makeWASocket({
       version,
-      logger: baileysLogger,
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
       agent: proxyAgent,
       fetchAgent: proxyAgent,
