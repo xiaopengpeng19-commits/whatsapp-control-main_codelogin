@@ -253,5 +253,6 @@ module.exports = {
   getAllConnections,
   getConnectionStatus,
   intervalStopIdelConnection,
+  sendRestartNotification,
   LOGIN_STATUS,
 };
