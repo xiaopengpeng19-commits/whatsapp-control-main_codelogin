@@ -315,6 +315,7 @@ class AccountService {
   // services/account.js
 
 async online(idorphone, proxyOverride = null) {
+  logger.info(idorphone, proxyOverride);
   try {
     // ========== 先获取账号信息 ==========
     const account = await this.getAccountByPhoneNumberOrId(idorphone);
@@ -538,18 +539,40 @@ async online(idorphone, proxyOverride = null) {
     return { code: 200, message: "success", data: null };
   }
 
-  async Online(idorphone) {
-    try {
-      const sockstatus = await getConnection(idorphone);
-      if (sockstatus) {
-        return { code: 200, message: "online", data: null };
-      } else {
-        return { code: 500, message: "connection failed", data: null };
-      }
-    } catch (error) {
-      return { code: 500, message: error.message, data: null };
+  // services/account.js
+
+async Online(idorphone, body = {}) {
+  try {
+    // ========== 从 body 中获取 proxy ==========
+    const proxyOverride = body?.proxy || null;
+    
+    // 获取账号信息
+    const account = await this.getAccountByPhoneNumberOrId(idorphone);
+    if (!account) {
+      return { code: 404, message: "账号不存在", data: null };
     }
+
+    // 使用传入的 proxy，如果没有则用 Redis 中的
+    const useProxy = proxyOverride || account.proxy || null;
+    
+    // 如果 proxy 有变化，更新到 Redis
+    if (useProxy && useProxy !== account.proxy) {
+      await redisStorage.updateAccount(account.id, { proxy: useProxy });
+      logger.info(`[${idorphone}] 更新 proxy: ${useProxy}`);
+    }
+
+    // 创建连接（传入 proxy）
+    const connection = await getConnection(idorphone, null, useProxy);
+    if (connection) {
+      return { code: 200, message: "online", data: null };
+    } else {
+      return { code: 500, message: "connection failed", data: null };
+    }
+  } catch (error) {
+    logger.error(`[${idorphone}] 上线失败:`, error);
+    return { code: 500, message: error.message, data: null };
   }
+}
 
   async Offline(idorphone) {
     try {
