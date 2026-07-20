@@ -39,7 +39,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     const proxyAgent = createProxyAgent(account.proxy);
 
     logger.info(`[${account.phoneNumber}] 使用 [${account.proxy}]`);
-    
+
     // ==========================================
     // 创建 logger 实例，所有地方统一使用
     // ==========================================
@@ -163,13 +163,17 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
   }
 }
 
-async function getConnection(identifier, callback = null) {
+// services/baileys/connect.js
+
+async function getConnection(identifier, callback = null, proxyOverride = null) {
+  // 1. 检查内存连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
     if (sock?.user) return sock;
     connections.delete(identifier);
   }
 
+  // 2. 从 Redis 获取账号
   const accountService = require('../account');
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
@@ -177,8 +181,15 @@ async function getConnection(identifier, callback = null) {
     return null;
   }
 
+  // 3. 如果传入了 proxyOverride，覆盖 account.proxy
+  if (proxyOverride) {
+    account.proxy = proxyOverride;
+  }
+
+  // 4. 检查内存连接（用 account.id）
   if (connections.has(account.id)) return connections.get(account.id);
 
+  // 5. 创建新连接
   const result = await createConnection(account, callback);
   return result?.status === 'connected' ? result.sock : null;
 }

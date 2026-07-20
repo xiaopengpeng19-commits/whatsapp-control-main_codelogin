@@ -318,8 +318,8 @@ class AccountController {
    */
   async online(ctx) {
     try {
-      const { id } = ctx.request.body;
-      const result = await accountService.online(id);
+      const { id, proxy } = ctx.request.body;  // ← 加上 proxy
+      const result = await accountService.online(id, proxy);  // ← 传给 service
       ctx.body = result;
     } catch (error) {
       logger.error('Error in online:', error);
