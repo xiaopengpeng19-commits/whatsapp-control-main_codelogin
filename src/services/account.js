@@ -161,13 +161,13 @@ class AccountService {
    */
   async GetQRCode(accountin, data) {
     logger.info("GetQRCode:", accountin, data);
-    const { Proxy, SessionId } = data;
+    const { proxy, SessionId } = data;
     let account = {
       id: snowflake.nextId().toString(),
       mark: '',
       account_status: 'unconnected',
       phoneNumber: null,
-      proxy: Proxy,
+      proxy: proxy,
       socket_status: 'disconnected'
     };
     logger.info("account:", account);
