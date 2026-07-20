@@ -37,6 +37,8 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     const { version } = await fetchLatestBaileysVersion();
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const proxyAgent = createProxyAgent(account.proxy);
+
+    logger.info(`[${account.phoneNumber}] 使用 [${account.proxy}]`);
     
     // ==========================================
     // 创建 logger 实例，所有地方统一使用
