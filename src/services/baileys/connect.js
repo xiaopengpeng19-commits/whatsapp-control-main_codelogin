@@ -158,7 +158,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     return result;
 
   } catch (error) {
-    baileysLogger.error(`[${accountId}] 创建连接失败:`, error);  // 改用 baileysLogger
+    logger.error(`[${accountId}] 创建连接失败:`, error); 
     return { status: 'failed', error: error.message };
   }
 }
