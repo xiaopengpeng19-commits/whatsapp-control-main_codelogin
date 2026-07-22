@@ -109,7 +109,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       if (events['contacts.upsert']) {
         const contacts = events['contacts.upsert'];
         logger.info(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
-        
+        logger.info(`[${accountId}] contact 结构:`, JSON.stringify(contacts[0], null, 2));
         for (const contact of contacts || []) {
           try {
             const phoneNumber = contact.id?.split('@')[0] || contact.id;
