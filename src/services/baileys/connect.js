@@ -102,6 +102,29 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         connectionHandler(events['connection.update']);
       }
 
+      if (events['contacts.upsert']) {
+        const contacts = events['contacts.upsert'];
+        logger.debug(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
+        
+        for (const contact of contacts || []) {
+          try {
+            const phoneNumber = contact.id?.split('@')[0] || contact.id;
+            await redisStorage.upsertChat({
+              id: snowflake.nextId(),
+              peerPhone: phoneNumber,
+              peerId: contact.id,
+              peerName: contact.name || contact.notify || phoneNumber,
+              accountId: accountId,
+              accountPhone: account.phoneNumber,
+              isGroup: contact.id?.includes('g.us') || false,
+              contactAdded: true,
+            });
+          } catch (error) {
+            logger.error(`[${accountId}] 保存联系人失败:`, error);
+          }
+        }
+      }
+
       if (events['messaging-history.set']) {
         // 同步完成，标记该号码已同步
         if (account.phoneNumber) {

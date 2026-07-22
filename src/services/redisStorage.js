@@ -445,23 +445,28 @@ async function updateMessageStatus(messageId, status) {
   return parseObject(await client.hGetAll(messageKey));
 }
 
-
-// services/redisStorage.js
-
-// ========== 同步标志相关 ==========
+// ========== 同步标志 ==========
 function getAccountSyncKey(phoneNumber) {
-  return redisKey('account', 'sync', phoneNumber);
+  return `account:sync:${phoneNumber}`;
 }
 
 async function getAccountSyncFlag(phoneNumber) {
+  if (!phoneNumber) return false;
   const client = getClient();
   const value = await client.get(getAccountSyncKey(phoneNumber));
   return value === 'true';
 }
 
 async function setAccountSyncFlag(phoneNumber, synced = true) {
+  if (!phoneNumber) return;
   const client = getClient();
   await client.set(getAccountSyncKey(phoneNumber), String(synced));
+}
+
+async function deleteAccountSyncFlag(phoneNumber) {
+  if (!phoneNumber) return;
+  const client = getClient();
+  await client.del(getAccountSyncKey(phoneNumber));
 }
 
 module.exports = {
@@ -483,6 +488,7 @@ module.exports = {
   getMessageById,
   getMessagesByChat,
   updateMessageStatus,
-  getAccountSyncFlag, 
-  setAccountSyncFlag
+  getAccountSyncFlag,
+  setAccountSyncFlag,
+  deleteAccountSyncFlag,
 };

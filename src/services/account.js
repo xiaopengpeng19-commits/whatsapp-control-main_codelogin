@@ -345,199 +345,206 @@ async online(idorphone, proxyOverride = null) {
   }
 }
 
-  async ContactsList(idorphone, body) {
-    try {
-      let connection = await getConnection(idorphone);
-      if (!connection) {
-        return { code: 500, message: "账号不存在", data: null };
-      }
-      const Contacts = await redisStorage.getContactsByAccountId(idorphone);
-      return {
-        code: 200,
-        message: "success",
-        data: {
-          contacts: Contacts
-        }
-      };
-    } catch (error) {
-      return { code: 500, message: error.message, data: null };
-    }
+async ContactsList(idorphone, body) {
+  try {
+    // 不需要获取 connection，直接从 Redis 读取
+    const contacts = await redisStorage.getContactsByAccountId(idorphone);
+    return {
+      code: 200,
+      message: "success",
+      data: { contacts }
+    };
+  } catch (error) {
+    return { code: 500, message: error.message, data: null };
   }
+}
 
-  async AddContacts(idorphone, body) {
-    try {
-      const { Phone, Name, Message } = body;
+  // services/account.js
 
-      if (!Phone) {
-        return { code: 400, message: "手机号码是必需的", data: null };
-      }
+// ========== AddContacts - 只添加联系人 ==========
+async AddContacts(idorphone, body) {
+  try {
+    const { Phone, Name } = body;
 
-      let sock = await getConnection(idorphone);
-      if (!sock) {
-        return { code: 500, message: "账号不存在或未连接", data: null };
-      }
-
-      const phoneNumber = Phone.replace(/[^\d]/g, '');
-      const jid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
-
-      logger.info(`尝试添加联系人: ${phoneNumber} (${jid})`);
-
-      const [onWhatsAppResult] = await sock.onWhatsApp(phoneNumber);
-
-      if (!onWhatsAppResult || !onWhatsAppResult.exists) {
-        return {
-          code: 400,
-          message: "该手机号未注册 WhatsApp",
-          data: { phone: phoneNumber }
-        };
-      }
-
-      logger.info(`手机号 ${phoneNumber} 已在 WhatsApp 上注册`);
-
-      if (Message) {
-        try {
-          await sock.sendMessage(jid, { text: Message });
-          logger.info(`欢迎消息已发送给 ${phoneNumber}`);
-        } catch (msgError) {
-          logger.info(`发送消息失败，但联系人验证成功: ${msgError.message}`);
-        }
-      }
-
-      return {
-        code: 200,
-        message: "success",
-        data: {
-          phone: phoneNumber,
-          jid: jid,
-          name: Name || phoneNumber
-        }
-      };
-    } catch (error) {
-      logger.error(`添加联系人失败: ${error.message}`);
-      return { code: 500, message: error.message, data: null };
+    if (!Phone) {
+      return { code: 400, message: "手机号码是必需的", data: null };
     }
+
+    // 获取连接
+    let sock = await getConnection(idorphone);
+    if (!sock) {
+      return { code: 500, message: "账号不存在或未连接", data: null };
+    }
+
+    // 格式化号码
+    const phoneNumber = Phone.replace(/[^\d]/g, '');
+    const jid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@s.whatsapp.net`;
+
+    // 验证是否已注册 WhatsApp
+    const [onWhatsAppResult] = await sock.onWhatsApp(phoneNumber);
+    if (!onWhatsAppResult || !onWhatsAppResult.exists) {
+      return {
+        code: 400,
+        message: "该手机号未注册 WhatsApp",
+        data: { phone: phoneNumber }
+      };
+    }
+
+    // ========== 添加到通讯录 ==========
+    await sock.addOrEditContact(jid, {
+      name: Name || phoneNumber,
+      notify: Name || phoneNumber,
+    });
+
+    // 保存到 Redis
+    await redisStorage.upsertChat({
+      id: snowflake.nextId(),
+      peerPhone: phoneNumber,
+      peerId: jid,
+      peerName: Name || phoneNumber,
+      accountPhone: idorphone,
+      accountId: idorphone,
+      isGroup: false,
+      contactAdded: true,
+      lastMessageTime: Date.now(),
+    });
+
+    return {
+      code: 200,
+      message: "success",
+      data: {
+        phone: phoneNumber,
+        jid: jid,
+        name: Name || phoneNumber
+      }
+    };
+  } catch (error) {
+    logger.error(`添加联系人失败: ${error.message}`);
+    return { code: 500, message: error.message, data: null };
   }
+}
 
-  async AddContactsBatch(idorphone, body) {
+// ========== AddContactsBatch - 批量添加联系人 ==========
+async AddContactsBatch(idorphone, body) {
+  try {
+    const { Contacts } = body;
+
+    if (!Contacts || !Array.isArray(Contacts) || Contacts.length === 0) {
+      return { code: 400, message: "联系人列表是必需的", data: null };
+    }
+
+    // 获取连接
+    let sock = await getConnection(idorphone);
+    if (!sock) {
+      return { code: 500, message: "账号不存在或未连接", data: null };
+    }
+
+    // 提取所有手机号
+    const phoneNumbers = Contacts.map(contact =>
+      contact.Phone.replace(/[^\d]/g, '')
+    );
+
+    // 批量验证
+    let onWhatsAppResults = [];
     try {
-      const { Contacts, Message } = body;
+      onWhatsAppResults = await sock.onWhatsApp(...phoneNumbers);
+    } catch (error) {
+      logger.error(`批量验证失败: ${error.message}`);
+      return { code: 500, message: `批量验证失败: ${error.message}`, data: null };
+    }
 
-      if (!Contacts || !Array.isArray(Contacts) || Contacts.length === 0) {
-        return { code: 400, message: "联系人列表是必需的", data: null };
-      }
+    const results = [];
 
-      let sock = await getConnection(idorphone);
-      if (!sock) {
-        return { code: 500, message: "账号不存在或未连接", data: null };
-      }
+    for (let i = 0; i < Contacts.length; i++) {
+      const contact = Contacts[i];
+      const phoneNumber = phoneNumbers[i];
+      const jid = `${phoneNumber}@s.whatsapp.net`;
+      const displayName = contact.Name || phoneNumber;
 
-      const results = [];
-      const phoneNumbers = Contacts.map(contact =>
-        contact.Phone.replace(/[^\d]/g, '')
-      );
-
-      logger.info(`开始批量验证 ${phoneNumbers.length} 个手机号...`);
-
-      let onWhatsAppResults = [];
       try {
-        onWhatsAppResults = await sock.onWhatsApp(...phoneNumbers);
-      } catch (error) {
-        logger.error(`批量验证失败: ${error.message}`);
-        return { code: 500, message: `批量验证失败: ${error.message}`, data: null };
-      }
+        // 检查是否已注册
+        const whatsappCheck = onWhatsAppResults.find(result =>
+          result.jid === jid || result.jid.startsWith(phoneNumber)
+        );
 
-      for (let i = 0; i < Contacts.length; i++) {
-        const contact = Contacts[i];
-        const phoneNumber = phoneNumbers[i];
-        const jid = `${phoneNumber}@s.whatsapp.net`;
-
-        try {
-          const whatsappCheck = onWhatsAppResults.find(result =>
-            result.jid === jid || result.jid.startsWith(phoneNumber)
-          );
-
-          if (!whatsappCheck || !whatsappCheck.exists) {
-            results.push({
-              phone: phoneNumber,
-              name: contact.Name || phoneNumber,
-              success: false,
-              errMsg: "该手机号未注册 WhatsApp"
-            });
-            continue;
-          }
-
-          if (Message) {
-            try {
-              await sock.sendMessage(jid, { text: Message });
-              logger.info(`欢迎消息已发送给 ${phoneNumber}`);
-            } catch (msgError) {
-              logger.info(`发送消息失败: ${msgError.message}`);
-            }
-          }
-
-          try {
-            await redisStorage.upsertChat({
-              id: snowflake.nextId(),
-              peerPhone: phoneNumber,
-              peerId: jid,
-              peerName: contact.Name || phoneNumber,
-              accountPhone: idorphone,
-              accountId: idorphone,
-              isGroup: false,
-              lastMessageTime: Date.now(),
-              contactAdded: true
-            });
-          } catch (dbError) {
-            logger.info(`保存联系人 ${phoneNumber} 到 Redis 失败: ${dbError.message}`);
-          }
-
+        if (!whatsappCheck || !whatsappCheck.exists) {
           results.push({
             phone: phoneNumber,
-            name: contact.Name || phoneNumber,
-            jid: jid,
-            success: true,
-            errMsg: ""
-          });
-
-          logger.info(`成功添加联系人: ${phoneNumber}`);
-        } catch (error) {
-          results.push({
-            phone: phoneNumber,
-            name: contact.Name || phoneNumber,
+            name: displayName,
             success: false,
-            errMsg: error.message
+            errMsg: "该手机号未注册 WhatsApp"
           });
-          logger.error(`处理联系人 ${phoneNumber} 失败: ${error.message}`);
+          continue;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // ========== 添加到通讯录 ==========
+        await sock.addOrEditContact(jid, {
+          name: displayName,
+          notify: displayName,
+        });
+
+        // 保存到 Redis
+        await redisStorage.upsertChat({
+          id: snowflake.nextId(),
+          peerPhone: phoneNumber,
+          peerId: jid,
+          peerName: displayName,
+          accountPhone: idorphone,
+          accountId: idorphone,
+          isGroup: false,
+          contactAdded: true,
+          lastMessageTime: Date.now(),
+        });
+
+        results.push({
+          phone: phoneNumber,
+          name: displayName,
+          jid: jid,
+          success: true,
+          errMsg: ""
+        });
+
+        logger.info(`成功添加联系人: ${phoneNumber} (${displayName})`);
+
+      } catch (error) {
+        logger.error(`添加联系人 ${phoneNumber} 失败: ${error.message}`);
+        results.push({
+          phone: phoneNumber,
+          name: displayName,
+          success: false,
+          errMsg: error.message
+        });
       }
 
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.length - successCount;
-
-      return {
-        code: 200,
-        message: "success",
-        data: {
-          results: results,
-          summary: {
-            total: results.length,
-            success: successCount,
-            failed: failureCount
-          }
-        }
-      };
-    } catch (error) {
-      logger.error(`批量添加联系人失败: ${error.message}`);
-      return { code: 500, message: error.message, data: null };
+      // 限速
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-  }
 
-  async GetPhoneCode(idorphone) {
-    // 暂时返回空
-    return { code: 200, message: "success", data: null };
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.length - successCount;
+
+    return {
+      code: 200,
+      message: "success",
+      data: {
+        results: results,
+        summary: {
+          total: results.length,
+          success: successCount,
+          failed: failureCount
+        }
+      }
+    };
+  } catch (error) {
+    logger.error(`批量添加联系人失败: ${error.message}`);
+    return { code: 500, message: error.message, data: null };
   }
+}
+
+async GetPhoneCode(idorphone) {
+  // 暂时返回空
+  return { code: 200, message: "success", data: null };
+}
 
   // services/account.js
 
