@@ -94,6 +94,9 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     const connectionHandler = createConnectionHandler(sock, account, ctx);
 
     sock.ev.process(async (events) => {
+
+      console.log('触发事件:', Object.keys(events));
+
       if (events['creds.update']) {
         await saveCreds();
         baileysLogger.debug(`[${accountId}] 凭证已保存`);  // 改用 baileysLogger
