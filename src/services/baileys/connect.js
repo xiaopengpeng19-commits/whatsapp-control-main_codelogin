@@ -52,7 +52,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
     }
 
     // ========== 根据号码判断是否需要同步 ==========
-    const hasSynced = phoneNumber ? await getAccountSyncFlag(phoneNumber) : false;
+    const hasSynced = account.phoneNumber ? await getAccountSyncFlag(account.phoneNumber) : false;
     
     const shouldSync = !hasSynced;  // 只有未同步过的号码才同步
 
