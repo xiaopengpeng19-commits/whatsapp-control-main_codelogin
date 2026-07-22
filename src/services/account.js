@@ -345,10 +345,17 @@ async online(idorphone, proxyOverride = null) {
   }
 }
 
+// services/account.js - ContactsList
+
 async ContactsList(idorphone, body) {
   try {
-    // 不需要获取 connection，直接从 Redis 读取
-    const contacts = await redisStorage.getContactsByAccountId(idorphone);
+    // ========== 先通过手机号查 accountId ==========
+    const account = await this.getAccountByPhoneNumberOrId(idorphone);
+    if (!account) {
+      return { code: 404, message: "账号不存在", data: null };
+    }
+    
+    const contacts = await redisStorage.getContactsByAccountId(account.id);
     return {
       code: 200,
       message: "success",
@@ -358,7 +365,6 @@ async ContactsList(idorphone, body) {
     return { code: 500, message: error.message, data: null };
   }
 }
-
   // services/account.js
 
 // ========== AddContacts - 只添加联系人 ==========
