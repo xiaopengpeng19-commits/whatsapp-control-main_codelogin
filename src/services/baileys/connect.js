@@ -3,6 +3,7 @@ const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState,
 const { conn } = require('../../utils/logger');
 const redisStorage = require('../redisStorage');
 const nats = require('../../config/nats');
+const { getAccountSyncFlag, setAccountSyncFlag } = require('../redisStorage');
 const { 
   LOGIN_STATUS, groupCache, msgRetryCounterCache 
 } = require('./constants');
@@ -50,6 +51,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       baileysLogger.trace = () => {};
     }
 
+    // ========== 根据号码判断是否需要同步 ==========
+    const hasSynced = phoneNumber ? await getAccountSyncFlag(phoneNumber) : false;
+    
+    const shouldSync = !hasSynced;  // 只有未同步过的号码才同步
+
     const sock = makeWASocket({
       version,
       auth: { 
@@ -58,7 +64,8 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       },
       agent: proxyAgent,
       fetchAgent: proxyAgent,
-      shouldSyncHistoryMessage: () => false,
+      shouldSyncHistoryMessage: () => shouldSync,  // ← 启用历史同步
+      syncFullHistory: shouldSync,  // ← 同步全部历史
       msgRetryCounterCache,
       connectTimeoutMs: 60000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
@@ -96,6 +103,11 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
       }
 
       if (events['messaging-history.set']) {
+        // 同步完成，标记该号码已同步
+        if (account.phoneNumber) {
+          await setAccountSyncFlag(account.phoneNumber, true);
+          logger.info(`[${accountId}] 历史同步完成，已标记 ${account.phoneNumber}`);
+        }
         await handleMessagingHistory(events, accountId, account.phoneNumber);
       }
 

@@ -445,6 +445,25 @@ async function updateMessageStatus(messageId, status) {
   return parseObject(await client.hGetAll(messageKey));
 }
 
+
+// services/redisStorage.js
+
+// ========== 同步标志相关 ==========
+function getAccountSyncKey(phoneNumber) {
+  return redisKey('account', 'sync', phoneNumber);
+}
+
+async function getAccountSyncFlag(phoneNumber) {
+  const client = getClient();
+  const value = await client.get(getAccountSyncKey(phoneNumber));
+  return value === 'true';
+}
+
+async function setAccountSyncFlag(phoneNumber, synced = true) {
+  const client = getClient();
+  await client.set(getAccountSyncKey(phoneNumber), String(synced));
+}
+
 module.exports = {
   getAccountById,
   getAccountByPhone,
@@ -463,5 +482,7 @@ module.exports = {
   saveMessage,
   getMessageById,
   getMessagesByChat,
-  updateMessageStatus
+  updateMessageStatus,
+  getAccountSyncFlag, 
+  setAccountSyncFlag
 };
