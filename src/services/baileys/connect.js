@@ -106,25 +106,35 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
         connectionHandler(events['connection.update']);
       }
 
+      // connect.js - contacts.upsert 处理
+
       if (events['contacts.upsert']) {
         const contacts = events['contacts.upsert'];
         logger.info(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
-        logger.info(`[${accountId}] contact 结构:`, JSON.stringify(contacts[0], null, 2));
+        
         for (const contact of contacts || []) {
           try {
-            const phoneNumber = contact.id?.split('@')[0] || contact.id;
+            // ========== 根据实际结构提取字段 ==========
+            const jid = contact.id || contact.phoneNumber;
+            const phoneNumber = jid?.split('@')[0] || jid;
+            const name = contact.name || contact.notify || phoneNumber;
+            
+            logger.info(`[${accountId}] 保存联系人: ${phoneNumber} (${name})`);
+            
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
               peerPhone: phoneNumber,
-              peerId: contact.id,
-              peerName: contact.name || contact.notify || phoneNumber,
+              peerId: jid,
+              peerName: name,
               accountId: accountId,
               accountPhone: account.phoneNumber,
-              isGroup: contact.id?.includes('g.us') || false,
+              isGroup: jid?.includes('g.us') || false,
               contactAdded: true,
             });
+            
+            logger.info(`[${accountId}] ✅ 联系人已保存: ${phoneNumber}`);
           } catch (error) {
-            logger.error(`[${accountId}] 保存联系人失败:`, error);
+            logger.error(`[${accountId}] ❌ 保存联系人失败:`, error);
           }
         }
       }
