@@ -3,6 +3,7 @@ const { default: makeWASocket, fetchLatestBaileysVersion, useMultiFileAuthState,
 const { conn } = require('../../utils/logger');
 const redisStorage = require('../redisStorage');
 const nats = require('../../config/nats');
+const snowflake = require('../../utils/snowflake');
 const { getAccountSyncFlag, setAccountSyncFlag } = require('../redisStorage');
 const { 
   LOGIN_STATUS, groupCache, msgRetryCounterCache 
