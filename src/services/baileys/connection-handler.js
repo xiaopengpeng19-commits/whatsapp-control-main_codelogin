@@ -130,13 +130,13 @@ function createConnectionHandler(sock, account, ctx) {
     }
     if (connection === 'open') {
 
-      console.log('========== sock 完整结构 ==========');
-      console.log(Object.keys(sock));
-      console.log('sock.ws:', sock.ws);
-      if (sock.ws) {
-        console.log('sock.ws keys:', Object.keys(sock.ws));
-        console.log('sock.ws._socket:', sock.ws._socket);
-      }
+      // console.log('========== sock 完整结构 ==========');
+      // console.log(Object.keys(sock));
+      // console.log('sock.ws:', sock.ws);
+      // if (sock.ws) {
+      //   console.log('sock.ws keys:', Object.keys(sock.ws));
+      //   console.log('sock.ws._socket:', sock.ws._socket);
+      // }
 
       return handleConnectionOpen(sock, account, ctx);
     }
