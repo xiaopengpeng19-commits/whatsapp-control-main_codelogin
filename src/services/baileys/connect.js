@@ -108,7 +108,7 @@ async function createConnection(account, onConnected = null, retryCount = 5, use
 
       if (events['contacts.upsert']) {
         const contacts = events['contacts.upsert'];
-        logger.debug(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
+        logger.info(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
         
         for (const contact of contacts || []) {
           try {
