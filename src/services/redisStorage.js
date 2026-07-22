@@ -273,9 +273,7 @@ async function upsertChat(chat) {
   const existingData = await client.hGetAll(chatKey);
   const existingChat = parseObject(existingData) || {};
 
-  if (!existingData || Object.keys(existingData).length === 0) {
-    await client.sAdd(getAccountChatsSetKey(chat.accountId), chat.peerId);
-  }
+  await client.sAdd(getAccountChatsSetKey(chat.accountId), chat.peerId);
 
   const now = new Date().toISOString();
   const updatedChat = {
