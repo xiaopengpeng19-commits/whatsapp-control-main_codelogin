@@ -267,8 +267,22 @@ async function deleteAccount(accountId) {
   return true;
 }
 
+// src/services/redisStorage.js
+
 async function upsertChat(chat) {
   const client = getClient();
+
+  // ========== 过滤官方账号/无效账号 ==========
+  const peerPhone = chat.peerPhone || '';
+  const peerId = chat.peerId || '';
+
+  // 手机号为 0 或空 → 跳过
+  if (String(peerPhone) === '0' || String(peerPhone) === '') {
+    logger.debug(`跳过无效账号: peerPhone=${peerPhone}, peerId=${peerId}`);
+    return null;
+  }
+
+  // ========== 正常保存 ==========
   const chatKey = getChatKey(chat.accountId, chat.peerId);
   const existingData = await client.hGetAll(chatKey);
   const existingChat = parseObject(existingData) || {};
