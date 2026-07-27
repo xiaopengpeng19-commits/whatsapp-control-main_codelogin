@@ -91,11 +91,7 @@ async function createConnection(
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
-      browser: state.creds.platform === 'iphone' 
-        ? Browsers.iphone("WhatsApp")
-        : state.creds.platform === 'android'
-        ? Browsers.android("WhatsApp")
-        : Browsers.macOS("Google Chrome"),
+      browser: Browsers.appropriate("WhatsApp"),
       getMessage: async (key) => {
         try {
           const stored = await redisStorage.getMessageById(key.id);
