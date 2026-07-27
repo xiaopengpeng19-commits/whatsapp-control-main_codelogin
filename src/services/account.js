@@ -1,10 +1,21 @@
 // account.js - 修改所有方法返回统一格式
-const snowflake = require('../utils/snowflake');
-const { auth } = require('../utils/logger'); const logger = auth;
-const { getConnection, createConnection, GetAccountStateFromConnection, CloseConnection } = require('./baileys/connect');
-const { formatPhoneNumber, isValidPhoneNumber, smartFormatPhoneNumber } = require('../utils/phoneFormatter');
-const redisStorage = require('./redisStorage');
-
+const snowflake = require("../utils/snowflake");
+const { auth } = require("../utils/logger");
+const logger = auth;
+const {
+  getConnection,
+  createConnection,
+  GetAccountStateFromConnection,
+  CloseConnection,
+} = require("./baileys/connect");
+const {
+  formatPhoneNumber,
+  isValidPhoneNumber,
+  smartFormatPhoneNumber,
+} = require("../utils/phoneFormatter");
+const redisStorage = require("./redisStorage");
+const path = require("path");
+const fs = require("fs");
 class AccountService {
   /**
    * 使用手机号码登录 WhatsApp
@@ -14,7 +25,7 @@ class AccountService {
 
     try {
       if (!phoneNumber) {
-        throw new Error('手机号码是必需的');
+        throw new Error("手机号码是必需的");
       }
 
       let formattedPhone;
@@ -28,13 +39,15 @@ class AccountService {
       const account = {
         id: snowflake.nextId().toString(),
         mark: `Phone: ${formattedPhone}`,
-        account_status: 'unconnected',
+        account_status: "unconnected",
         phoneNumber: formattedPhone,
         proxy: proxy || null,
         sessionId: sessionId || null,
       };
 
-      logger.info(`create whatsapp connection for phone number: ${formattedPhone}`);
+      logger.info(
+        `create whatsapp connection for phone number: ${formattedPhone}`,
+      );
 
       let callbackfun = null;
       callbackfun = async () => {
@@ -44,20 +57,20 @@ class AccountService {
             id: account.id,
             mark: account.mark,
             proxy: account.proxy,
-            socket_status: 'connected',
-            account_status: 'normal',
-            sessionId: sessionId
+            socket_status: "connected",
+            account_status: "normal",
+            sessionId: sessionId,
           });
-          logger.info('Account upserted to Redis:', account.phoneNumber);
+          logger.info("Account upserted to Redis:", account.phoneNumber);
         } catch (dbError) {
-          logger.error('Failed to save/update account to Redis:', dbError);
+          logger.error("Failed to save/update account to Redis:", dbError);
         }
-      }
+      };
 
       const result = await createConnection(account, callbackfun, 5, true);
 
       if (result.status === 500) {
-        throw new Error('cant connect to whatsapp server');
+        throw new Error("cant connect to whatsapp server");
       }
 
       if (result.status === 403) {
@@ -69,8 +82,9 @@ class AccountService {
             accountId: account.id,
             phoneNumber: formattedPhone,
             pairingCode: result.qr,
-            message: 'pairing code generated, please input this code in your app'
-          }
+            message:
+              "pairing code generated, please input this code in your app",
+          },
         };
       }
 
@@ -82,12 +96,12 @@ class AccountService {
             success: true,
             accountId: account.id,
             phoneNumber: formattedPhone,
-            sock: result.sock
-          }
+            sock: result.sock,
+          },
         };
       }
 
-      throw new Error('unknown connection status');
+      throw new Error("unknown connection status");
     } catch (error) {
       logger.error(`login failed for phone number: ${phoneNumber}`, error);
       return { code: 500, message: error.message, data: null };
@@ -108,11 +122,11 @@ class AccountService {
     const { proxy } = accountDic;
     const account = {
       id: snowflake.nextId().toString(),
-      mark: '',
-      account_status: 'unconnected',
+      mark: "",
+      account_status: "unconnected",
       phoneNumber: null,
       proxy: proxy,
-      socket_status: 'disconnected'
+      socket_status: "disconnected",
     };
 
     await redisStorage.upsertAccount(account);
@@ -134,15 +148,15 @@ class AccountService {
           lastActive: account.lastActive,
           createdAt: account.createdAt,
           updatedAt: account.updatedAt,
-          accountState: accountState
+          accountState: accountState,
         });
       }
       return {
         code: 200,
         message: "success",
         data: {
-          accounts: result
-        }
+          accounts: result,
+        },
       };
     } catch (error) {
       return { code: 500, message: error.message, data: null };
@@ -164,11 +178,11 @@ class AccountService {
     const { proxy, SessionId } = data;
     let account = {
       id: snowflake.nextId().toString(),
-      mark: '',
-      account_status: 'unconnected',
+      mark: "",
+      account_status: "unconnected",
       phoneNumber: null,
       proxy: proxy,
-      socket_status: 'disconnected'
+      socket_status: "disconnected",
     };
     logger.info("account:", account);
     let callbackfun = null;
@@ -180,47 +194,47 @@ class AccountService {
           id: account.id,
           mark: account.mark,
           proxy: account.proxy,
-          socket_status: 'connected',
-          account_status: 'normal',
-          sessionId: SessionId
+          socket_status: "connected",
+          account_status: "normal",
+          sessionId: SessionId,
         });
-        logger.info('Account upserted to Redis:', account.phoneNumber);
+        logger.info("Account upserted to Redis:", account.phoneNumber);
       } catch (dbError) {
-        logger.error('Failed to save/update account to Redis:', dbError);
+        logger.error("Failed to save/update account to Redis:", dbError);
       }
-    }
+    };
 
     logger.info("callbackfuncgetQrCode", account);
     let result = await createConnection(account, callbackfun);
-    logger.info('resultgetQrCode:', result);
+    logger.info("resultgetQrCode:", result);
 
-    if (result.status == 'failed') {
+    if (result.status == "failed") {
       return {
         code: 500,
         message: "cant connect to whatsapp",
-        data: null
+        data: null,
       };
     }
-    if (result.status == 'waiting_qr') {
+    if (result.status == "waiting_qr") {
       return {
         code: 200,
         message: "qr code generated",
         data: {
-          qrCode: result.qr
-        }
+          qrCode: result.qr,
+        },
       };
     }
     return {
       code: 500,
       message: `unknown status: ${result.status}`,
-      data: null
+      data: null,
     };
   }
 
   async getPairCode(account, callbackurl) {
     logger.info("callbackfuncgetPairCode", callbackurl);
     let result = await createConnection(account, callbackurl, 5, true);
-    logger.info('resultgetPairCode:', result);
+    logger.info("resultgetPairCode:", result);
 
     if (result.status == 500) {
       return {
@@ -242,10 +256,10 @@ class AccountService {
   async disconnectAccount(id) {
     const account = await this.getAccount(id);
     if (!account) {
-      return { code: 404, message: 'Account not found', data: null };
+      return { code: 404, message: "Account not found", data: null };
     }
     const updated = await redisStorage.updateAccount(account.id, {
-      socket_status: 'disconnected'
+      socket_status: "disconnected",
     });
     return { code: 200, message: "success", data: updated };
   }
@@ -264,14 +278,14 @@ class AccountService {
           message: "success",
           data: {
             state: accountState,
-            account: account.phoneNumber
-          }
+            account: account.phoneNumber,
+          },
         };
       } else {
         return {
           code: 404,
           message: "not found in db",
-          data: null
+          data: null,
         };
       }
     } catch (error) {
@@ -281,28 +295,30 @@ class AccountService {
 
   async GetAccountState2(account) {
     const statusmap = {
-      'banned': 5,
-      'expired': 4,
-      'normal': 3,
-      'unconnected': 1,
-      'logged_out': 1,
-      'logging': 2,
-      'banned': 5,
-    }
+      banned: 5,
+      expired: 4,
+      normal: 3,
+      unconnected: 1,
+      logged_out: 1,
+      logging: 2,
+      banned: 5,
+    };
     try {
-      const sockstatus = await GetAccountStateFromConnection(account.phoneNumber);
+      const sockstatus = await GetAccountStateFromConnection(
+        account.phoneNumber,
+      );
       if (sockstatus) {
         logger.info("sockstatus:", sockstatus);
         return statusmap[sockstatus.account_status] || 1;
       }
       logger.info("account.account_status:", account.account_status);
-      if (account.account_status == 'banned') {
+      if (account.account_status == "banned") {
         return 5;
-      } else if (account.account_status == 'expired') {
+      } else if (account.account_status == "expired") {
         return 4;
-      } else if (account.account_status == 'normal') {
+      } else if (account.account_status == "normal") {
         return 3;
-      } else if (account.account_status == 'unconnected') {
+      } else if (account.account_status == "unconnected") {
         return 1;
       } else {
         return 1;
@@ -314,121 +330,123 @@ class AccountService {
 
   // services/account.js
 
-async online(idorphone, proxyOverride = null) {
-  logger.info(idorphone, proxyOverride);
-  try {
-    // ========== 先获取账号信息 ==========
-    const account = await this.getAccountByPhoneNumberOrId(idorphone);
-    if (!account) {
-      return { code: 404, message: "账号不存在", data: null };
-    }
+  async online(idorphone, proxyOverride = null) {
+    logger.info(idorphone, proxyOverride);
+    try {
+      // ========== 先获取账号信息 ==========
+      const account = await this.getAccountByPhoneNumberOrId(idorphone);
+      if (!account) {
+        return { code: 404, message: "账号不存在", data: null };
+      }
 
-    // ========== 使用传入的 proxy，如果没有则用 Redis 中的 ==========
-    const useProxy = proxyOverride || account.proxy || null;
-    
-    // 如果 proxy 有变化，更新到 Redis
-    if (useProxy && useProxy !== account.proxy) {
-      await redisStorage.updateAccount(account.id, { proxy: useProxy });
-      logger.info(`[${idorphone}] 更新 proxy: ${useProxy}`);
-    }
+      // ========== 使用传入的 proxy，如果没有则用 Redis 中的 ==========
+      const useProxy = proxyOverride || account.proxy || null;
 
-    // ========== 创建连接（传入 proxy） ==========
-    const connection = await getConnection(idorphone, null, useProxy);
-    if (connection) {
-      return { code: 200, message: "online", data: null };
-    } else {
-      return { code: 500, message: "connection failed", data: null };
+      // 如果 proxy 有变化，更新到 Redis
+      if (useProxy && useProxy !== account.proxy) {
+        await redisStorage.updateAccount(account.id, { proxy: useProxy });
+        logger.info(`[${idorphone}] 更新 proxy: ${useProxy}`);
+      }
+
+      // ========== 创建连接（传入 proxy） ==========
+      const connection = await getConnection(idorphone, null, useProxy);
+      if (connection) {
+        return { code: 200, message: "online", data: null };
+      } else {
+        return { code: 500, message: "connection failed", data: null };
+      }
+    } catch (error) {
+      logger.error(`[${idorphone}] 上线失败:`, error);
+      return { code: 500, message: error.message, data: null };
     }
-  } catch (error) {
-    logger.error(`[${idorphone}] 上线失败:`, error);
-    return { code: 500, message: error.message, data: null };
   }
-}
 
-// services/account.js - ContactsList
+  // services/account.js - ContactsList
 
-async ContactsList(idorphone, body) {
-  try {
-    // ========== 先通过手机号查 accountId ==========
-    const account = await this.getAccountByPhoneNumberOrId(idorphone);
-    if (!account) {
-      return { code: 404, message: "账号不存在", data: null };
+  async ContactsList(idorphone, body) {
+    try {
+      // ========== 先通过手机号查 accountId ==========
+      const account = await this.getAccountByPhoneNumberOrId(idorphone);
+      if (!account) {
+        return { code: 404, message: "账号不存在", data: null };
+      }
+
+      const contacts = await redisStorage.getContactsByAccountId(account.id);
+      return {
+        code: 200,
+        message: "success",
+        data: { contacts },
+      };
+    } catch (error) {
+      return { code: 500, message: error.message, data: null };
     }
-    
-    const contacts = await redisStorage.getContactsByAccountId(account.id);
+  }
+  // services/account.js
+
+  // ========== AddContacts - 只添加联系人 ==========
+  // services/account.js
+
+  // ========== AddContacts - 返回错误提示 ==========
+  async AddContacts(idorphone, body) {
+    logger.warn(`[AddContacts] 功能已禁用: ${JSON.stringify(body)}`);
     return {
-      code: 200,
-      message: "success",
-      data: { contacts }
+      code: 400,
+      message:
+        "添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
+      data: null,
     };
-  } catch (error) {
-    return { code: 500, message: error.message, data: null };
   }
-}
-  // services/account.js
 
-// ========== AddContacts - 只添加联系人 ==========
-// services/account.js
+  // ========== AddContactsBatch - 返回错误提示 ==========
+  async AddContactsBatch(idorphone, body) {
+    logger.warn(`[AddContactsBatch] 功能已禁用: ${JSON.stringify(body)}`);
+    return {
+      code: 400,
+      message:
+        "批量添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
+      data: null,
+    };
+  }
 
-// ========== AddContacts - 返回错误提示 ==========
-async AddContacts(idorphone, body) {
-  logger.warn(`[AddContacts] 功能已禁用: ${JSON.stringify(body)}`);
-  return {
-    code: 400,
-    message: "添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
-    data: null
-  };
-}
-
-// ========== AddContactsBatch - 返回错误提示 ==========
-async AddContactsBatch(idorphone, body) {
-  logger.warn(`[AddContactsBatch] 功能已禁用: ${JSON.stringify(body)}`);
-  return {
-    code: 400,
-    message: "批量添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
-    data: null
-  };
-}
-
-async GetPhoneCode(idorphone) {
-  // 暂时返回空
-  return { code: 200, message: "success", data: null };
-}
+  async GetPhoneCode(idorphone) {
+    // 暂时返回空
+    return { code: 200, message: "success", data: null };
+  }
 
   // services/account.js
 
-async Online(idorphone, body = {}) {
-  try {
-    // ========== 从 body 中获取 proxy ==========
-    const proxyOverride = body?.proxy || null;
-    
-    // 获取账号信息
-    const account = await this.getAccountByPhoneNumberOrId(idorphone);
-    if (!account) {
-      return { code: 404, message: "账号不存在", data: null };
-    }
+  async Online(idorphone, body = {}) {
+    try {
+      // ========== 从 body 中获取 proxy ==========
+      const proxyOverride = body?.proxy || null;
 
-    // 使用传入的 proxy，如果没有则用 Redis 中的
-    const useProxy = proxyOverride || account.proxy || null;
-    
-    // 如果 proxy 有变化，更新到 Redis
-    if (useProxy && useProxy !== account.proxy) {
-      await redisStorage.updateAccount(account.id, { proxy: useProxy });
-      logger.info(`[${idorphone}] 更新 proxy: ${useProxy}`);
-    }
+      // 获取账号信息
+      const account = await this.getAccountByPhoneNumberOrId(idorphone);
+      if (!account) {
+        return { code: 404, message: "账号不存在", data: null };
+      }
 
-    // 创建连接（传入 proxy）
-    const connection = await getConnection(idorphone, null, useProxy);
-    if (connection) {
-      return { code: 200, message: "online", data: null };
-    } else {
-      return { code: 500, message: "connection failed", data: null };
+      // 使用传入的 proxy，如果没有则用 Redis 中的
+      const useProxy = proxyOverride || account.proxy || null;
+
+      // 如果 proxy 有变化，更新到 Redis
+      if (useProxy && useProxy !== account.proxy) {
+        await redisStorage.updateAccount(account.id, { proxy: useProxy });
+        logger.info(`[${idorphone}] 更新 proxy: ${useProxy}`);
+      }
+
+      // 创建连接（传入 proxy）
+      const connection = await getConnection(idorphone, null, useProxy);
+      if (connection) {
+        return { code: 200, message: "online", data: null };
+      } else {
+        return { code: 500, message: "connection failed", data: null };
+      }
+    } catch (error) {
+      logger.error(`[${idorphone}] 上线失败:`, error);
+      return { code: 500, message: error.message, data: null };
     }
-  } catch (error) {
-    logger.error(`[${idorphone}] 上线失败:`, error);
-    return { code: 500, message: error.message, data: null };
   }
-}
 
   async Offline(idorphone) {
     try {
@@ -467,7 +485,7 @@ async Online(idorphone, body = {}) {
     try {
       try {
         await CloseConnection(idorphone);
-      } catch (error) { }
+      } catch (error) {}
 
       const account = await this.getAccount(idorphone);
       if (account) {
@@ -484,15 +502,15 @@ async Online(idorphone, body = {}) {
       const { Phones } = data;
       const sock = await getConnection(idorphone);
       const contacts = await sock.onWhatsApp(...phones);
-      let results = contacts.map(contact => {
-        return contact.jid.split('@')[0]
+      let results = contacts.map((contact) => {
+        return contact.jid.split("@")[0];
       });
       return {
         code: 200,
         message: "success",
         data: {
-          phones: results
-        }
+          phones: results,
+        },
       };
     } catch (error) {
       return { code: 500, message: error.message, data: null };
@@ -501,158 +519,153 @@ async Online(idorphone, body = {}) {
 
   // src/services/account.js - 添加 ImportAccount 方法
 
-/**
- * 导入账号凭证
- * @param {string} accountId - 账号ID（手机号或自定义ID）
- * @param {Object} body - 请求体
- * @param {Object} body.creds - 凭证数据
- * @param {string} body.phoneNumber - 手机号
- * @param {string} body.proxy - 代理（可选）
- * @param {string} body.sessionId - 会话ID（可选）
- * @returns {Promise<Object>} 导入结果
- */
-async ImportAccount(accountId, body) {
-  try {
-    const { creds, phoneNumber, proxy, sessionId } = body;
-    
-    // 1. 验证必要参数
-    if (!creds) {
-      return { code: 400, message: "creds is required", data: null };
-    }
-    
-    if (!phoneNumber) {
-      return { code: 400, message: "phoneNumber is required", data: null };
-    }
-    
-    // 2. 验证 creds 格式
-    if (!creds.me || !creds.me.id) {
-      return { code: 400, message: "Invalid creds format: missing me.id", data: null };
-    }
-    
-    // 3. 提取账号信息
-    const accountId = phoneNumber; // 直接用手机号做 ID
-    const account = {
-      id: accountId,
-      mark: `Phone: ${phoneNumber}`,
-      account_status: 'normal',
-      phoneNumber: phoneNumber,
-      proxy: proxy || null,
-      socket_status: 'disconnected',
-      sessionId: sessionId || null,
-    };
-    
-    // 4. 保存 creds 到文件系统
-    const sessionDir = path.join(process.env.STORAGE_PATH || './storage/sessions', accountId);
-    if (!fs.existsSync(sessionDir)) {
-      fs.mkdirSync(sessionDir, { recursive: true });
-    }
-    
-    const credsPath = path.join(sessionDir, 'creds.json');
-    
-    // 转换 Buffer 数据格式（如果是字符串格式的 Buffer，需要转换）
-    const processedCreds = this._processCredsForStorage(creds);
-    
-    // 写入文件
-    fs.writeFileSync(credsPath, JSON.stringify(processedCreds, null, 2));
-    logger.info(`[ImportAccount] Creds saved to ${credsPath}`);
-    
-    // 5. 保存到 Redis
-    try {
-      const redisStorage = require('./redisStorage');
-      await redisStorage.upsertAccount({
-        id: account.id,
-        mark: account.mark,
-        proxy: account.proxy,
-        phoneNumber: account.phoneNumber,
-        socket_status: 'disconnected',
-        account_status: 'normal',
-        sessionId: account.sessionId
-      });
-      logger.info(`[ImportAccount] Account saved to Redis: ${phoneNumber}`);
-    } catch (redisError) {
-      logger.error(`[ImportAccount] Failed to save to Redis:`, redisError);
-      // 不阻断流程，文件已经保存了
-    }
-    
-    // 6. 尝试自动连接（可选）
-    let connectionStatus = 'disconnected';
-    try {
-      const { getConnection } = require('./baileys/connect');
-      const sock = await getConnection(accountId);
-      if (sock) {
-        connectionStatus = 'connected';
-        logger.info(`[ImportAccount] Account ${phoneNumber} auto-connected successfully`);
-      }
-    } catch (connError) {
-      logger.warn(`[ImportAccount] Auto-connect failed: ${connError.message}`);
-    }
-    
-    // 7. 返回结果
-    return {
-      code: 200,
-      message: "Account imported successfully",
-      data: {
-        accountId: account.id,
-        phoneNumber: phoneNumber,
-        socket_status: connectionStatus,
-        credsPath: credsPath
-      }
-    };
-    
-  } catch (error) {
-    logger.error(`[ImportAccount] Error:`, error);
-    return {
-      code: 500,
-      message: error.message,
-      data: null
-    };
-  }
-}
+  /**
+   * 导入账号凭证
+   * @param {string} accountId - 账号ID（手机号或自定义ID）
+   * @param {Object} body - 请求体
+   * @param {Object} body.creds - 凭证数据
+   * @param {string} body.phoneNumber - 手机号
+   * @param {string} body.proxy - 代理（可选）
+   * @param {string} body.sessionId - 会话ID（可选）
+   * @returns {Promise<Object>} 导入结果
+   */
+  // src/services/account.js - 在文件顶部添加 require
 
-/**
- * 处理凭证数据，确保 Buffer 格式正确
- */
-_processCredsForStorage(creds) {
-  // 如果 creds 是字符串，尝试解析
-  let data = creds;
-  if (typeof creds === 'string') {
+  // 在 class AccountService 中添加
+  /**
+   * 导入账号凭证（只导入，不自动登录）
+   * @param {string} accountId - 账号ID（手机号）
+   * @param {Object} body - 请求体
+   * @param {Object} body.creds - 凭证数据
+   * @param {string} body.phoneNumber - 手机号（可选，默认用 accountId）
+   * @param {string} body.proxy - 代理（可选）
+   * @param {string} body.sessionId - 会话ID（可选）
+   * @returns {Promise<Object>} 导入结果
+   */
+  async ImportAccount(accountId, body) {
     try {
-      data = JSON.parse(creds);
-    } catch (e) {
-      // 如果不是 JSON，直接返回
-      return creds;
+      const { creds, phoneNumber, proxy, sessionId } = body;
+
+      // 1. 验证必要参数
+      if (!creds) {
+        return { code: 400, message: "creds is required", data: null };
+      }
+
+      // 手机号：优先用 body.phoneNumber，其次用 accountId，最后从 creds 提取
+      const finalPhone =
+        phoneNumber || accountId || creds.Phone || creds.me?.id?.split(":")[0];
+      if (!finalPhone) {
+        return { code: 400, message: "phoneNumber is required", data: null };
+      }
+
+      // 2. 验证 creds 格式
+      if (!creds.me || !creds.me.id) {
+        return {
+          code: 400,
+          message: "Invalid creds format: missing me.id",
+          data: null,
+        };
+      }
+
+      // 3. 保存 creds 到文件系统
+      const sessionDir = path.join(
+        process.env.STORAGE_PATH || "./storage/sessions",
+        finalPhone,
+      );
+      if (!fs.existsSync(sessionDir)) {
+        fs.mkdirSync(sessionDir, { recursive: true });
+      }
+
+      const credsPath = path.join(sessionDir, "creds.json");
+
+      // 写入文件
+      fs.writeFileSync(credsPath, JSON.stringify(creds, null, 2));
+      logger.info(`[ImportAccount] Creds saved to ${credsPath}`);
+
+      // 4. 保存账号信息到 Redis
+      try {
+        const redisStorage = require("./redisStorage");
+        await redisStorage.upsertAccount({
+          id: finalPhone,
+          mark: `Phone: ${finalPhone}`,
+          proxy: proxy || null,
+          phoneNumber: finalPhone,
+          socket_status: "disconnected", // 导入后处于离线状态
+          account_status: "normal",
+          sessionId: sessionId || null,
+        });
+        logger.info(`[ImportAccount] Account saved to Redis: ${finalPhone}`);
+      } catch (redisError) {
+        logger.error(`[ImportAccount] Failed to save to Redis:`, redisError);
+        // 不阻断流程，文件已经保存了
+      }
+
+      // 5. 返回结果（不自动登录）
+      return {
+        code: 200,
+        message: "Account imported successfully",
+        data: {
+          accountId: finalPhone,
+          phoneNumber: finalPhone,
+          socket_status: "disconnected",
+          credsPath: credsPath,
+          importedAt: new Date().toISOString(),
+        },
+      };
+    } catch (error) {
+      logger.error(`[ImportAccount] Error:`, error);
+      return {
+        code: 500,
+        message: error.message,
+        data: null,
+      };
     }
   }
-  
-  // 递归处理，确保所有 Buffer 数据格式正确
-  return this._convertBufferFields(data);
-}
 
-_convertBufferFields(obj) {
-  if (!obj || typeof obj !== 'object') {
-    return obj;
+  /**
+   * 处理凭证数据，确保 Buffer 格式正确
+   */
+  _processCredsForStorage(creds) {
+    // 如果 creds 是字符串，尝试解析
+    let data = creds;
+    if (typeof creds === "string") {
+      try {
+        data = JSON.parse(creds);
+      } catch (e) {
+        // 如果不是 JSON，直接返回
+        return creds;
+      }
+    }
+
+    // 递归处理，确保所有 Buffer 数据格式正确
+    return this._convertBufferFields(data);
   }
-  
-  // 如果是 Buffer 对象格式 { data: "...", type: "Buffer" }
-  if (obj.type === 'Buffer' && obj.data) {
-    return {
-      data: obj.data,
-      type: 'Buffer'
-    };
+
+  _convertBufferFields(obj) {
+    if (!obj || typeof obj !== "object") {
+      return obj;
+    }
+
+    // 如果是 Buffer 对象格式 { data: "...", type: "Buffer" }
+    if (obj.type === "Buffer" && obj.data) {
+      return {
+        data: obj.data,
+        type: "Buffer",
+      };
+    }
+
+    // 如果是数组，递归处理每个元素
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this._convertBufferFields(item));
+    }
+
+    // 如果是对象，递归处理每个字段
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = this._convertBufferFields(value);
+    }
+    return result;
   }
-  
-  // 如果是数组，递归处理每个元素
-  if (Array.isArray(obj)) {
-    return obj.map(item => this._convertBufferFields(item));
-  }
-  
-  // 如果是对象，递归处理每个字段
-  const result = {};
-  for (const [key, value] of Object.entries(obj)) {
-    result[key] = this._convertBufferFields(value);
-  }
-  return result;
-}
 }
 
 module.exports = new AccountService();
