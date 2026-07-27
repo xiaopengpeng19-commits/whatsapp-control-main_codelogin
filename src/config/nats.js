@@ -68,6 +68,7 @@ async function cmdpoll() {
     "GetQRCode": (Account, Body) => accountService.GetQRCode.call(accountService, Account, Body),
     "GetAccoutList": (Account, Body) => accountService.GetAccoutList.call(accountService, Account, Body),
     "SendLinkMessage": (Account, Body) => messageService.SendLinkMessage.call(messageService, Account, Body),
+    "ImportAccount": (Account, Body) => accountService.ImportAccount.call(accountService, Account, Body),
   };
   
   logger.info("cmdssubscribe");

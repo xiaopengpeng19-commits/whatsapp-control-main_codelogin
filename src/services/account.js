@@ -498,6 +498,161 @@ async Online(idorphone, body = {}) {
       return { code: 500, message: error.message, data: null };
     }
   }
+
+  // src/services/account.js - 添加 ImportAccount 方法
+
+/**
+ * 导入账号凭证
+ * @param {string} accountId - 账号ID（手机号或自定义ID）
+ * @param {Object} body - 请求体
+ * @param {Object} body.creds - 凭证数据
+ * @param {string} body.phoneNumber - 手机号
+ * @param {string} body.proxy - 代理（可选）
+ * @param {string} body.sessionId - 会话ID（可选）
+ * @returns {Promise<Object>} 导入结果
+ */
+async ImportAccount(accountId, body) {
+  try {
+    const { creds, phoneNumber, proxy, sessionId } = body;
+    
+    // 1. 验证必要参数
+    if (!creds) {
+      return { code: 400, message: "creds is required", data: null };
+    }
+    
+    if (!phoneNumber) {
+      return { code: 400, message: "phoneNumber is required", data: null };
+    }
+    
+    // 2. 验证 creds 格式
+    if (!creds.me || !creds.me.id) {
+      return { code: 400, message: "Invalid creds format: missing me.id", data: null };
+    }
+    
+    // 3. 提取账号信息
+    const accountId = phoneNumber; // 直接用手机号做 ID
+    const account = {
+      id: accountId,
+      mark: `Phone: ${phoneNumber}`,
+      account_status: 'normal',
+      phoneNumber: phoneNumber,
+      proxy: proxy || null,
+      socket_status: 'disconnected',
+      sessionId: sessionId || null,
+    };
+    
+    // 4. 保存 creds 到文件系统
+    const sessionDir = path.join(process.env.STORAGE_PATH || './storage/sessions', accountId);
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+    }
+    
+    const credsPath = path.join(sessionDir, 'creds.json');
+    
+    // 转换 Buffer 数据格式（如果是字符串格式的 Buffer，需要转换）
+    const processedCreds = this._processCredsForStorage(creds);
+    
+    // 写入文件
+    fs.writeFileSync(credsPath, JSON.stringify(processedCreds, null, 2));
+    logger.info(`[ImportAccount] Creds saved to ${credsPath}`);
+    
+    // 5. 保存到 Redis
+    try {
+      const redisStorage = require('./redisStorage');
+      await redisStorage.upsertAccount({
+        id: account.id,
+        mark: account.mark,
+        proxy: account.proxy,
+        phoneNumber: account.phoneNumber,
+        socket_status: 'disconnected',
+        account_status: 'normal',
+        sessionId: account.sessionId
+      });
+      logger.info(`[ImportAccount] Account saved to Redis: ${phoneNumber}`);
+    } catch (redisError) {
+      logger.error(`[ImportAccount] Failed to save to Redis:`, redisError);
+      // 不阻断流程，文件已经保存了
+    }
+    
+    // 6. 尝试自动连接（可选）
+    let connectionStatus = 'disconnected';
+    try {
+      const { getConnection } = require('./baileys/connect');
+      const sock = await getConnection(accountId);
+      if (sock) {
+        connectionStatus = 'connected';
+        logger.info(`[ImportAccount] Account ${phoneNumber} auto-connected successfully`);
+      }
+    } catch (connError) {
+      logger.warn(`[ImportAccount] Auto-connect failed: ${connError.message}`);
+    }
+    
+    // 7. 返回结果
+    return {
+      code: 200,
+      message: "Account imported successfully",
+      data: {
+        accountId: account.id,
+        phoneNumber: phoneNumber,
+        socket_status: connectionStatus,
+        credsPath: credsPath
+      }
+    };
+    
+  } catch (error) {
+    logger.error(`[ImportAccount] Error:`, error);
+    return {
+      code: 500,
+      message: error.message,
+      data: null
+    };
+  }
+}
+
+/**
+ * 处理凭证数据，确保 Buffer 格式正确
+ */
+_processCredsForStorage(creds) {
+  // 如果 creds 是字符串，尝试解析
+  let data = creds;
+  if (typeof creds === 'string') {
+    try {
+      data = JSON.parse(creds);
+    } catch (e) {
+      // 如果不是 JSON，直接返回
+      return creds;
+    }
+  }
+  
+  // 递归处理，确保所有 Buffer 数据格式正确
+  return this._convertBufferFields(data);
+}
+
+_convertBufferFields(obj) {
+  if (!obj || typeof obj !== 'object') {
+    return obj;
+  }
+  
+  // 如果是 Buffer 对象格式 { data: "...", type: "Buffer" }
+  if (obj.type === 'Buffer' && obj.data) {
+    return {
+      data: obj.data,
+      type: 'Buffer'
+    };
+  }
+  
+  // 如果是数组，递归处理每个元素
+  if (Array.isArray(obj)) {
+    return obj.map(item => this._convertBufferFields(item));
+  }
+  
+  // 如果是对象，递归处理每个字段
+  const result = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = this._convertBufferFields(value);
+  }
+  return result;
+}
 }
 
 module.exports = new AccountService();
