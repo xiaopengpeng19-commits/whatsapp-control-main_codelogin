@@ -7,8 +7,6 @@ const redisStorage = require('../redisStorage');
 const { conn } = require('../../utils/logger');
 const logger = conn;
 
-const nats = require('../../config/nats');
-
 
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
@@ -43,17 +41,6 @@ function handlePairCode(sock, account, ctx) {
     .then(code => {
       logger.info(`[${accountId}] 配对码生成成功: ${code}`);
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE, 'disconnected');
-      
-      // ========== 发送配对码到 NATS ==========
-      nats.publishMessage('pairing.code', {
-        accountId: accountId,
-        phoneNumber: account.phoneNumber,
-        pairingCode: code,
-        timestamp: new Date().toISOString(),
-        status: 'waiting_pair_code'
-      }).catch(err => {
-        logger.error(`[${accountId}] 发送配对码到 NATS 失败:`, err);
-      });
       
       ctx.resolveFunc({ status: 'waiting_pair_code', code, accountId, phoneNumber: account.phoneNumber });
     })
