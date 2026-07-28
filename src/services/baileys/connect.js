@@ -58,33 +58,26 @@ async function createConnection(
 
     logger.info(`[${account.phoneNumber}] 使用 [${account.proxy}]`);
 
-    // ==========================================
-    // 创建 logger 实例，所有地方统一使用
-    // ==========================================
     const baileysLogger = createBaileysLogger();
-
-    // 添加 trace 方法（如果不存在）
     if (!baileysLogger.trace) {
       baileysLogger.trace = () => {};
     }
 
-    // ========== 根据号码判断是否需要同步 ==========
     const hasSynced = account.phoneNumber
       ? await getAccountSyncFlag(account.phoneNumber)
       : false;
-
-    const shouldSync = !hasSynced; // 只有未同步过的号码才同步
+    const shouldSync = !hasSynced;
 
     const sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger), // 改用 baileysLogger
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
       agent: proxyAgent,
       fetchAgent: proxyAgent,
-      shouldSyncHistoryMessage: () => shouldSync, // ← 启用历史同步
-      syncFullHistory: shouldSync, // ← 同步全部历史
+      shouldSyncHistoryMessage: () => shouldSync,
+      syncFullHistory: shouldSync,
       msgRetryCounterCache,
       connectTimeoutMs: 60000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
@@ -101,7 +94,7 @@ async function createConnection(
           }
           return proto.Message.create({ conversation: "" });
         } catch (error) {
-          baileysLogger.error(`[${accountId}] getMessage 失败:`, error); // 改用 baileysLogger
+          baileysLogger.error(`[${accountId}] getMessage 失败:`, error);
           return proto.Message.create({ conversation: "" });
         }
       },
@@ -118,22 +111,21 @@ async function createConnection(
       onConnected,
       saveCreds,
       connections,
+      _resolved: false,
     };
     const connectionHandler = createConnectionHandler(sock, account, ctx);
 
     sock.ev.process(async (events) => {
-      console.log("触发事件:", Object.keys(events));
+      logger.info("触发事件:", Object.keys(events));
 
       if (events["creds.update"]) {
         await saveCreds();
-        baileysLogger.debug(`[${accountId}] 凭证已保存`); // 改用 baileysLogger
+        baileysLogger.debug(`[${accountId}] 凭证已保存`);
       }
 
       if (events["connection.update"]) {
         connectionHandler(events["connection.update"]);
       }
-
-      // connect.js - contacts.upsert 处理
 
       if (events["contacts.upsert"]) {
         const contacts = events["contacts.upsert"];
@@ -141,12 +133,9 @@ async function createConnection(
 
         for (const contact of contacts || []) {
           try {
-            // ========== 根据实际结构提取字段 ==========
             const jid = contact.id || contact.phoneNumber;
             const phoneNumber = jid?.split("@")[0] || jid;
             const name = contact.name || contact.notify || phoneNumber;
-
-            logger.info(`[${accountId}] 保存联系人: ${phoneNumber} (${name})`);
 
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
@@ -167,7 +156,6 @@ async function createConnection(
       }
 
       if (events["messaging-history.set"]) {
-        // 同步完成，标记该号码已同步
         if (account.phoneNumber) {
           await setAccountSyncFlag(account.phoneNumber, true);
           logger.info(
@@ -244,7 +232,7 @@ async function createConnection(
 
     const timeoutDuration = usePairCode ? 60000 : 120000;
     const timeoutId = setTimeout(() => {
-      baileysLogger.error(`[${accountId}] 登录超时`); // 改用 baileysLogger
+      baileysLogger.error(`[${accountId}] 登录超时`);
       sock.account_status = LOGIN_STATUS.FAILED;
       updateAccountStatus(
         accountId,
@@ -252,7 +240,9 @@ async function createConnection(
         LOGIN_STATUS.FAILED,
         "disconnected",
       );
-      rejectFunc(new Error("登录超时"));
+      if (rejectFunc && typeof rejectFunc === "function") {
+        rejectFunc(new Error("登录超时"));
+      }
     }, timeoutDuration);
 
     const result = await loginPromise;
@@ -264,21 +254,17 @@ async function createConnection(
   }
 }
 
-// services/baileys/connect.js
-
 async function getConnection(
   identifier,
   callback = null,
   proxyOverride = null,
 ) {
-  // 1. 检查内存连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
     if (sock?.user) return sock;
     connections.delete(identifier);
   }
 
-  // 2. 从 Redis 获取账号
   const accountService = require("../account");
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
@@ -286,15 +272,12 @@ async function getConnection(
     return null;
   }
 
-  // 3. 如果传入了 proxyOverride，覆盖 account.proxy
   if (proxyOverride) {
     account.proxy = proxyOverride;
   }
 
-  // 4. 检查内存连接（用 account.id）
   if (connections.has(account.id)) return connections.get(account.id);
 
-  // 5. 创建新连接
   const result = await createConnection(account, callback);
   return result?.status === "connected" ? result.sock : null;
 }
@@ -347,9 +330,6 @@ async function intervalStopIdelConnection() {
   return closedCount;
 }
 
-/**
- * 发送重启通知到 NATS
- */
 async function sendRestartNotification() {
   try {
     await nats.publishMessage("system.restart", {

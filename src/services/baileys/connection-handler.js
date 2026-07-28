@@ -11,7 +11,7 @@ async function updateAccountStatus(
   accountId,
   phoneNumber,
   accountStatus,
-  socketStatus,
+  socketStatus
 ) {
   try {
     const accountData = {
@@ -32,13 +32,13 @@ async function updateAccountStatus(
   }
 }
 
-// src/services/baileys/connection-handler.js
-
-function handlePairCode(sock, account, ctx) {
+// ========== 配对码模式：收到 qr 后请求配对码 ==========
+function handleQRCodeForPairing(sock, account, ctx) {
   const { accountId, resolveFunc, rejectFunc } = ctx;
   const phoneNumber = account.phoneNumber;
 
-  // ========== 防御性检查 ==========
+  logger.info(`[${accountId}] QR码已生成，准备请求配对码`);
+
   if (!phoneNumber) {
     logger.error(`[${accountId}] 配对码登录失败: 手机号为空`);
     if (rejectFunc && typeof rejectFunc === "function") {
@@ -52,22 +52,18 @@ function handlePairCode(sock, account, ctx) {
     return;
   }
 
-  logger.info(`[${accountId}] 开始请求配对码，手机号: ${phoneNumber}`);
-
   sock
     .requestPairingCode(phoneNumber)
     .then((code) => {
       logger.info(`[${accountId}] 配对码生成成功: ${code}`);
 
-      // 更新账号状态
       updateAccountStatus(
         accountId,
         account.phoneNumber,
         LOGIN_STATUS.WAITING_PAIR_CODE,
-        "disconnected",
+        "disconnected"
       );
 
-      // 返回配对码
       if (resolveFunc && typeof resolveFunc === "function") {
         resolveFunc({
           status: "waiting_pair_code",
@@ -86,7 +82,7 @@ function handlePairCode(sock, account, ctx) {
         accountId,
         account.phoneNumber,
         LOGIN_STATUS.FAILED,
-        "disconnected",
+        "disconnected"
       );
 
       if (rejectFunc && typeof rejectFunc === "function") {
@@ -95,6 +91,7 @@ function handlePairCode(sock, account, ctx) {
     });
 }
 
+// ========== 二维码模式：直接返回 qr ==========
 function handleQRCode(sock, account, qr, ctx) {
   const { accountId, resolveFunc } = ctx;
   logger.info(`[${accountId}] QR码已生成`);
@@ -102,15 +99,22 @@ function handleQRCode(sock, account, qr, ctx) {
     accountId,
     account.phoneNumber,
     LOGIN_STATUS.WAITING_QR,
-    "disconnected",
+    "disconnected"
   );
-  resolveFunc({ status: "waiting_qr", qr, accountId });
+  if (resolveFunc && typeof resolveFunc === "function") {
+    resolveFunc({ status: "waiting_qr", qr, accountId });
+  }
 }
-
-// src/services/baileys/connection-handler.js
 
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected } = ctx;
+
+  // ========== 防止重复处理 ==========
+  if (ctx._resolved) {
+    logger.debug(`[${accountId}] 连接已处理，跳过重复关闭事件`);
+    return;
+  }
+
   const statusCode =
     lastDisconnect?.error instanceof Boom
       ? lastDisconnect.error?.output?.statusCode
@@ -131,8 +135,9 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     return;
   }
 
-  // 515 重启
+  // ========== 515 重启 ==========
   if (statusCode === 515) {
+    ctx._resolved = true;
     logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
     createConnection(account, onConnected, true)
@@ -150,7 +155,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     return;
   }
 
-  // 其他错误
+  // ========== 其他错误 ==========
   const status =
     statusCode === 403 || statusCode === 401
       ? LOGIN_STATUS.BANNED
@@ -164,18 +169,25 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     accountId,
     account.phoneNumber,
     status,
-    sock.socket_status || "connected",
+    sock.socket_status || "connected"
   );
   cleanupSession(accountId);
   ctx.connections.delete(accountId);
 
   rejectFunc(
-    new Error(`连接关闭: ${lastDisconnect?.error?.message || "未知错误"}`),
+    new Error(`连接关闭: ${lastDisconnect?.error?.message || "未知错误"}`)
   );
 }
 
 function handleConnectionOpen(sock, account, ctx) {
   const { accountId, resolveFunc, onConnected, connections } = ctx;
+
+  // ========== 防止重复处理 ==========
+  if (ctx._resolved) {
+    logger.debug(`[${accountId}] 连接已处理，跳过重复打开事件`);
+    return;
+  }
+  ctx._resolved = true;
 
   sock._manualClose = false;
 
@@ -193,7 +205,7 @@ function handleConnectionOpen(sock, account, ctx) {
     accountId,
     phoneNumber,
     LOGIN_STATUS.CONNECTED,
-    "connected",
+    "connected"
   );
   connections.set(accountId, sock);
 
@@ -201,16 +213,18 @@ function handleConnectionOpen(sock, account, ctx) {
 
   if (onConnected) {
     onConnected(sock).catch((err) =>
-      logger.error(`[${accountId}] 回调执行失败:`, err),
+      logger.error(`[${accountId}] 回调执行失败:`, err)
     );
   }
 
-  resolveFunc({
-    status: "connected",
-    sock,
-    accountId,
-    phoneNumber: account.phoneNumber,
-  });
+  if (resolveFunc && typeof resolveFunc === "function") {
+    resolveFunc({
+      status: "connected",
+      sock,
+      accountId,
+      phoneNumber: account.phoneNumber,
+    });
+  }
 }
 
 function createConnectionHandler(sock, account, ctx) {
@@ -219,24 +233,21 @@ function createConnectionHandler(sock, account, ctx) {
     const { connection, lastDisconnect, qr } = update;
     logger.debug(`[${ctx.accountId}] 连接更新:`, update);
 
-    if (qr && usePairCode && !sock.authState.creds.registered) {
-      return handlePairCode(sock, account, qr, ctx);
+    // ========== 配对码模式：收到 qr 后请求配对码 ==========
+    if (qr && usePairCode) {
+      return handleQRCodeForPairing(sock, account, ctx);
     }
+
+    // ========== 二维码模式：直接返回 qr ==========
     if (qr && !usePairCode) {
       return handleQRCode(sock, account, qr, ctx);
     }
+
     if (connection === "close") {
       return handleConnectionClose(sock, account, lastDisconnect, ctx);
     }
-    if (connection === "open") {
-      // console.log('========== sock 完整结构 ==========');
-      // console.log(Object.keys(sock));
-      // console.log('sock.ws:', sock.ws);
-      // if (sock.ws) {
-      //   console.log('sock.ws keys:', Object.keys(sock.ws));
-      //   console.log('sock.ws._socket:', sock.ws._socket);
-      // }
 
+    if (connection === "open") {
       return handleConnectionOpen(sock, account, ctx);
     }
   };

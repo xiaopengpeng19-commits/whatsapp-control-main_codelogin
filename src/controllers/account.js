@@ -1,10 +1,11 @@
-const accountService = require('../services/account');
-const { getModule } = require('../utils/logger'); const logger = getModule('controller');
-const path = require('path');
-const fs = require('fs');
+const accountService = require("../services/account");
+const { getModule } = require("../utils/logger");
+const logger = getModule("controller");
+const path = require("path");
+const fs = require("fs");
 const snowflake = require("../utils/snowflake");
 const axios = require("axios");
-const { getConnection} = require('../services/baileys/connect');
+const { getConnection } = require("../services/baileys/connect");
 
 class AccountController {
   /**
@@ -13,19 +14,14 @@ class AccountController {
    */
   async loginWithPhone(ctx) {
     try {
-      const { 
-        phoneNumber, 
-        proxy, 
-        sessionId, 
-        callbackUrl 
-      } = ctx.request.body;
+      const { phoneNumber, proxy, sessionId, callbackUrl } = ctx.request.body;
 
       if (!phoneNumber) {
         ctx.status = 400;
         ctx.body = {
           success: false,
-          message: 'phone number is required',
-          error: 'PHONE_NUMBER_REQUIRED'
+          message: "phone number is required",
+          error: "PHONE_NUMBER_REQUIRED",
         };
         return;
       }
@@ -38,7 +34,7 @@ class AccountController {
       };
 
       // 调用服务层方法
-      logger.info("loginData:",loginData);
+      logger.info("loginData:", loginData);
       const result = await accountService.loginWithPhoneNumber(loginData);
 
       // 如果有回调URL，在成功时调用
@@ -47,34 +43,33 @@ class AccountController {
           const axiosInstance = axios.create({
             timeout: 10000,
             headers: {
-              'Content-Type': 'application/json'
-            }
+              "Content-Type": "application/json",
+            },
           });
-          
+
           await axiosInstance.post(callbackUrl, {
             accountId: result.accountId,
             phoneNumber: result.phoneNumber,
-            status: 'connected',
-            timestamp: new Date().toISOString()
+            status: "connected",
+            timestamp: new Date().toISOString(),
           });
-          
+
           logger.info(`callback send success: ${callbackUrl}`);
         } catch (callbackError) {
-          logger.error('callbackError send error:', callbackError);
+          logger.error("callbackError send error:", callbackError);
         }
       }
 
       ctx.status = 200;
       ctx.body = result;
-
     } catch (error) {
-      logger.error('login failed for phone number:', error);
-      
+      logger.error("login failed for phone number:", error);
+
       ctx.status = 500;
       ctx.body = {
         success: false,
         message: error.message,
-        error: 'LOGIN_FAILED'
+        error: "LOGIN_FAILED",
       };
     }
   }
@@ -85,154 +80,163 @@ class AccountController {
   async loginByQrcode(ctx) {
     try {
       const { proxy } = ctx.request.body;
-      const {callbackurl}=ctx.request.body;
+      const { callbackurl } = ctx.request.body;
       // Create a new account if not exists
       let account = {
         id: snowflake.nextId().toString(),
-        mark: '',
-        account_status: 'unconnected',
+        mark: "",
+        account_status: "unconnected",
         phoneNumber: null,
         proxy: proxy,
-        socket_status:'disconnected'
+        socket_status: "disconnected",
       };
-      let callbackfun=null;
-      callbackfun=async()=>{
-          logger.info('callbackurl_callbackfun:',callbackurl);
-          if(callbackurl){
-            const axios = require('axios');
-            const axiosInstance = axios.create({
-
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            });
-            try{
-              const response = await axiosInstance.get(callbackurl);
-            }catch(error){
-              logger.info("error:",error)
-            }
-           
+      let callbackfun = null;
+      callbackfun = async () => {
+        logger.info("callbackurl_callbackfun:", callbackurl);
+        if (callbackurl) {
+          const axios = require("axios");
+          const axiosInstance = axios.create({
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+          try {
+            const response = await axiosInstance.get(callbackurl);
+          } catch (error) {
+            logger.info("error:", error);
           }
         }
-      
+      };
+
       // Connect to WhatsApp and generate QR code
-      const result = await accountService.GetQRCode(account,callbackfun);
-      logger.info('resultincotroller:',result);
-      if(result.Success){
+      const result = await accountService.GetQRCode(account, callbackfun);
+      logger.info("resultincotroller:", result);
+      if (result.Success) {
         ctx.body = {
           status: 200,
           data: result.Data,
-          accountId: account.id
+          accountId: account.id,
         };
-      }else{
+      } else {
         ctx.body = {
           status: 500,
-          data: result.data
+          data: result.data,
         };
       }
-
     } catch (error) {
-      logger.error('Error in loginByQrcode1:', error);
+      logger.error("Error in loginByQrcode1:", error);
       ctx.status = error.status || 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }
+  // src/controllers/account.js - loginByPairCode 方法
+
   async loginByPairCode(ctx) {
     try {
-    
-      const {phone,proxy,callbackurl}=ctx.request.body;
-      if(!phone){
+      const { phone, proxy, callbackurl } = ctx.request.body;
+
+      if (!phone) {
         ctx.body = {
-          status: 500,
-          data: 'Phone number is required'
+          status: 400,
+          data: "Phone number is required",
         };
+        return;
       }
-      
-      // Create a new account if not exists
-      let account = {
+
+      const account = {
         id: snowflake.nextId().toString(),
-        mark: '',
-        account_status: 'unconnected',
+        mark: "",
+        account_status: "unconnected",
         phoneNumber: phone,
         proxy: proxy,
-        socket_status:'disconnected'
+        socket_status: "disconnected",
       };
-      let callbackfun=null;
-      
-        logger.info("callbackurl:",callbackurl)
-        callbackfun=async()=>{
-          logger.info('callbackurl:',callbackurl);
-          if(callbackurl){
-            const axios = require('axios');
-            const axiosInstance = axios.create({
 
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            });
-            try{
-              const response = await axiosInstance.get(callbackurl);
-            }catch(error){
-              logger.info("error:",error)
-            }
-           
+      let callbackfun = null;
+      if (callbackurl) {
+        callbackfun = async () => {
+          logger.info("callbackurl:", callbackurl);
+          try {
+            const axios = require("axios");
+            await axios.get(callbackurl);
+          } catch (error) {
+            logger.info("callback error:", error);
           }
-        }
-      
-      // Connect to WhatsApp and generate QR code
-      const result = await accountService.getPairCode(account,callbackfun);
-      logger.info('result get pair  code',result);
-      if(result.status==403){
-        ctx.body = {
-          status: 200,
-          data: result.qr,
-          accountId: account.id
         };
-      }else{
-        // ctx.body = {
-        //   status: 500,
-        //   data: result.data
-        // };
       }
 
-    } catch (error) {
-      logger.error('Error in loginByQrcode2:', error);
-      ctx.status = error.status || 500;
+      const result = await accountService.getPairCode(account, callbackfun);
+      logger.info("result get pair code", result);
+
+      // ========== 防御性检查 ==========
+      if (!result) {
+        ctx.body = {
+          status: 500,
+          data: "获取配对码失败：返回结果为空",
+        };
+        return;
+      }
+
+      if (result.status === 403 || result.status === "waiting_pair_code") {
+        ctx.body = {
+          status: 200,
+          data: result.qr || result.code,
+          accountId: account.id,
+        };
+        return;
+      }
+
+      if (result.status === 200 || result.status === "connected") {
+        ctx.body = {
+          status: 200,
+          data: "连接成功",
+          accountId: account.id,
+        };
+        return;
+      }
+
       ctx.body = {
-        message: error.message
+        status: result.status || 500,
+        data: result.data || result.error || "获取配对码失败",
+      };
+    } catch (error) {
+      logger.error("Error in loginByPairCode:", error);
+      ctx.body = {
+        status: 500,
+        message: error.message,
       };
     }
   }
-  async checkonwhatsapp(ctx){
+  async checkonwhatsapp(ctx) {
     try {
-      const { accountId,phones } = ctx.request.body;
-      const connection=await getConnection(accountId);
-      if(!connection){
+      const { accountId, phones } = ctx.request.body;
+      const connection = await getConnection(accountId);
+      if (!connection) {
         ctx.body = {
           status: 500,
-          data: 'Account not connected'
+          data: "Account not connected",
         };
       }
-      logger.info("phones:",phones)
-      if(phones.length==0){
+      logger.info("phones:", phones);
+      if (phones.length == 0) {
         ctx.body = {
           status: 500,
-          data: 'Phones are required'
+          data: "Phones are required",
         };
       }
-      const result=await connection.onWhatsApp(...phones);
-      ctx.body ={
-        status:200,
-        data:result
-      }
-    } catch (error) {
-      logger.error('Error in checkonwhatsapp:', error);
-      
+      const result = await connection.onWhatsApp(...phones);
       ctx.body = {
-        status:500,
-        data: error.message
+        status: 200,
+        data: result,
+      };
+    } catch (error) {
+      logger.error("Error in checkonwhatsapp:", error);
+
+      ctx.body = {
+        status: 500,
+        data: error.message,
       };
     }
   }
@@ -242,10 +246,10 @@ class AccountController {
 
       ctx.body = accounts;
     } catch (error) {
-      logger.error('Error in getAllAccounts:', error);
+      logger.error("Error in getAllAccounts:", error);
       ctx.status = 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }
@@ -261,10 +265,10 @@ class AccountController {
       ctx.status = 201;
       ctx.body = account;
     } catch (error) {
-      logger.error('Error in createAccount:', error);
+      logger.error("Error in createAccount:", error);
       ctx.status = 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }
@@ -280,17 +284,17 @@ class AccountController {
       if (!account) {
         ctx.status = 404;
         ctx.body = {
-          message: 'Account not found'
+          message: "Account not found",
         };
         return;
       }
 
       ctx.body = account;
     } catch (error) {
-      logger.error('Error in getAccount:', error);
+      logger.error("Error in getAccount:", error);
       ctx.status = 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }
@@ -305,10 +309,10 @@ class AccountController {
 
       ctx.body = result;
     } catch (error) {
-      logger.error('Error in connectAccount:', error);
+      logger.error("Error in connectAccount:", error);
       ctx.status = error.status || 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }
@@ -318,15 +322,15 @@ class AccountController {
    */
   async online(ctx) {
     try {
-      const { id, proxy } = ctx.request.body;  // ← 加上 proxy
-      const result = await accountService.online(id, proxy);  // ← 传给 service
+      const { id, proxy } = ctx.request.body; // ← 加上 proxy
+      const result = await accountService.online(id, proxy); // ← 传给 service
       ctx.body = result;
     } catch (error) {
-      logger.error('Error in online:', error);
+      logger.error("Error in online:", error);
       ctx.status = error.status || 500;
       ctx.body = {
         status: 500,
-        data: error.message
+        data: error.message,
       };
     }
   }
@@ -337,10 +341,10 @@ class AccountController {
 
       ctx.body = result;
     } catch (error) {
-      logger.error('Error in disconnectAccount:', error);
+      logger.error("Error in disconnectAccount:", error);
       ctx.status = error.status || 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }
@@ -354,21 +358,24 @@ class AccountController {
 
       await accountService.DeleteAccount(id);
       // Chats and contacts are now stored in Redis and will be removed by redisStorage.deleteAccount()
-      try{
+      try {
         // No SQL cleanup needed for Redis persistence
-      }catch(e){}
-      const sessionDir = path.join(process.env.STORAGE_PATH || './storage/sessions', id);
+      } catch (e) {}
+      const sessionDir = path.join(
+        process.env.STORAGE_PATH || "./storage/sessions",
+        id,
+      );
       if (fs.existsSync(sessionDir)) {
         fs.rmSync(sessionDir, { recursive: true, force: true });
       }
       ctx.body = {
-        message: 'Account deleted successfully'
+        message: "Account deleted successfully",
       };
     } catch (error) {
-      logger.error('Error in deleteAccount:', error);
+      logger.error("Error in deleteAccount:", error);
       ctx.status = error.status || 500;
       ctx.body = {
-        message: error.message
+        message: error.message,
       };
     }
   }

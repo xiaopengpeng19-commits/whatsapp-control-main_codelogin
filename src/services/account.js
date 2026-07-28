@@ -231,21 +231,53 @@ class AccountService {
     };
   }
 
+  // src/services/account.js - getPairCode 方法
+
   async getPairCode(account, callbackurl) {
     logger.info("callbackfuncgetPairCode", callbackurl);
-    let result = await createConnection(account, callbackurl, true);
-    logger.info("resultgetPairCode:", result);
 
-    if (result.status == 500) {
+    try {
+      const result = await createConnection(account, callbackurl, true);
+      logger.info("resultgetPairCode:", result);
+
+      // ========== 防御性检查 ==========
+      if (!result) {
+        return {
+          status: 500,
+          data: "createConnection 返回空结果",
+        };
+      }
+
+      if (result.status === 500 || result.status === "failed") {
+        return {
+          status: 500,
+          data: result.error || "连接失败",
+        };
+      }
+
+      if (result.status === 403 || result.status === "waiting_pair_code") {
+        return {
+          status: 403,
+          qr: result.code || result.qr,
+        };
+      }
+
+      if (result.status === 200 || result.status === "connected") {
+        return {
+          status: 200,
+          data: "连接成功",
+        };
+      }
+
       return {
         status: 500,
-        data: "cant connect to whatsapp",
+        data: `未知状态: ${result.status}`,
       };
-    }
-    if (result.status == 403) {
+    } catch (error) {
+      logger.error("getPairCode error:", error);
       return {
-        status: 403,
-        qr: result.qr,
+        status: 500,
+        data: error.message,
       };
     }
   }
