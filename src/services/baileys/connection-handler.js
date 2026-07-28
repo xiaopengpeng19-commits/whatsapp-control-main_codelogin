@@ -7,6 +7,9 @@ const redisStorage = require('../redisStorage');
 const { conn } = require('../../utils/logger');
 const logger = conn;
 
+const nats = require('../../config/nats');
+
+
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
     const accountData = {
@@ -30,14 +33,28 @@ async function updateAccountStatus(accountId, phoneNumber, accountStatus, socket
 function handlePairCode(sock, account, ctx) {
   const { accountId, resolveFunc, rejectFunc } = ctx;
   const phoneNumber = account.phoneNumber;
+  
   if (!phoneNumber) {
     rejectFunc(new Error('配对码登录需要提供手机号'));
     return;
   }
+  
   sock.requestPairingCode(phoneNumber)
     .then(code => {
       logger.info(`[${accountId}] 配对码生成成功: ${code}`);
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE, 'disconnected');
+      
+      // ========== 发送配对码到 NATS ==========
+      nats.publishMessage('pairing.code', {
+        accountId: accountId,
+        phoneNumber: account.phoneNumber,
+        pairingCode: code,
+        timestamp: new Date().toISOString(),
+        status: 'waiting_pair_code'
+      }).catch(err => {
+        logger.error(`[${accountId}] 发送配对码到 NATS 失败:`, err);
+      });
+      
       ctx.resolveFunc({ status: 'waiting_pair_code', code, accountId, phoneNumber: account.phoneNumber });
     })
     .catch(err => {
@@ -60,7 +77,33 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const statusCode = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
   
-  // ========== 不管什么原因，都不重连，直接结束 ==========
+  // ========== 手动关闭：直接结束 ==========
+  if (isManualClose) {
+    logger.info(`[${accountId}] 手动关闭连接`);
+    ctx.connections.delete(accountId);
+    rejectFunc(new Error('手动关闭'));
+    return;
+  }
+
+  // ========== 515 重启信号：配对码登录成功，需要重启 ==========
+  if (statusCode === 515) {
+    logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
+    // 不清除会话，不删除连接，直接重新创建
+    const { createConnection } = require('./connect');
+    createConnection(account, onConnected, true)
+      .then(result => {
+        if (result?.status === 'connected') {
+          ctx.connections.set(accountId, result.sock);
+          resolveFunc(result);
+        } else {
+          rejectFunc(new Error('重启连接失败'));
+        }
+      })
+      .catch(err => rejectFunc(err));
+    return;
+  }
+
+  // ========== 其他状态码：断开连接 ==========
   const status = statusCode === 403 || statusCode === 401 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
   
   if (statusCode === 403 || statusCode === 401) {
@@ -71,7 +114,6 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   cleanupSession(accountId);
   ctx.connections.delete(accountId);
   
-  // 直接 reject，不重试
   rejectFunc(new Error(`连接关闭: ${lastDisconnect?.error?.message || '未知错误'}`));
 }
 
