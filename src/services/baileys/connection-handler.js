@@ -56,34 +56,23 @@ function handleQRCode(sock, account, qr, ctx) {
 }
 
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
-  const { accountId, resolveFunc, rejectFunc, retryCount, usePairCode, onConnected } = ctx;
+  const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected } = ctx;
   const statusCode = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
   
-  const shouldReconnect = !isManualClose
-    && statusCode !== DisconnectReason.loggedOut 
-    && statusCode !== 403 
-    && statusCode !== 401
-    && lastDisconnect?.error?.message !== 'QR refs attempts ended';
-
-  logger.warn(`[${accountId}] 连接关闭, 状态码: ${statusCode}, 重试: ${shouldReconnect}`);
-
-  if (shouldReconnect && retryCount > 0) {
-    logger.info(`[${accountId}] 剩余重试次数: ${retryCount}`);
-    const { createConnection } = require('./connect');
-    createConnection(account, onConnected, retryCount - 1, usePairCode)
-      .then(result => resolveFunc(result))
-      .catch(err => rejectFunc(err));
-    return;
+  // ========== 不管什么原因，都不重连，直接结束 ==========
+  const status = statusCode === 403 || statusCode === 401 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
+  
+  if (statusCode === 403 || statusCode === 401) {
+    sock.socket_status = 'disconnected';
   }
-
-  const status = statusCode === 403 ? LOGIN_STATUS.BANNED : LOGIN_STATUS.EXPIRED;
-  if (statusCode === 403 || statusCode === 401) sock.socket_status = 'disconnected';
   
   updateAccountStatus(accountId, account.phoneNumber, status, sock.socket_status || 'connected');
   cleanupSession(accountId);
   ctx.connections.delete(accountId);
-  rejectFunc(new Error(`连接失败: ${lastDisconnect?.error?.message || '未知错误'}`));
+  
+  // 直接 reject，不重试
+  rejectFunc(new Error(`连接关闭: ${lastDisconnect?.error?.message || '未知错误'}`));
 }
 
 function handleConnectionOpen(sock, account, ctx) {

@@ -40,7 +40,6 @@ const connections = new Map();
 async function createConnection(
   account,
   onConnected = null,
-  retryCount = 5,
   usePairCode = false,
 ) {
   const accountId = account.id;
