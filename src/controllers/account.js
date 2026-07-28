@@ -380,12 +380,8 @@ class AccountController {
     }
   }
 
-  // src/controllers/account.js - 添加导出凭证方法
+  // src/controllers/account.js - exportAccount 方法
 
-  /**
-   * 导出账号凭证
-   * @param {Object} ctx - Koa context
-   */
   async exportAccount(ctx) {
     try {
       const { phone } = ctx.request.body;
@@ -400,7 +396,6 @@ class AccountController {
         return;
       }
 
-      // 1. 获取账号信息
       const account = await accountService.getAccountByPhoneNumberOrId(phone);
       if (!account) {
         ctx.body = {
@@ -411,10 +406,10 @@ class AccountController {
         return;
       }
 
-      // 2. 读取 creds.json 文件
+      // ========== 修复：确保 account.id 转成字符串 ==========
       const sessionDir = path.join(
         process.env.STORAGE_PATH || "./storage/sessions",
-        account.id,
+        String(account.id), // ← 转成字符串
       );
       const credsPath = path.join(sessionDir, "creds.json");
 
@@ -427,7 +422,6 @@ class AccountController {
         return;
       }
 
-      // 3. 读取并解析凭证文件
       try {
         const credsContent = fs.readFileSync(credsPath, "utf8");
         const creds = JSON.parse(credsContent);
