@@ -67,7 +67,7 @@ class AccountService {
         }
       };
 
-      const result = await createConnection(account, callbackfun, 5, true);
+      const result = await createConnection(account, callbackfun, true);
 
       if (result.status === 500) {
         throw new Error("cant connect to whatsapp server");
@@ -233,7 +233,7 @@ class AccountService {
 
   async getPairCode(account, callbackurl) {
     logger.info("callbackfuncgetPairCode", callbackurl);
-    let result = await createConnection(account, callbackurl, 5, true);
+    let result = await createConnection(account, callbackurl, true);
     logger.info("resultgetPairCode:", result);
 
     if (result.status == 500) {

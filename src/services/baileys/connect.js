@@ -114,7 +114,6 @@ async function createConnection(
       accountId,
       resolveFunc,
       rejectFunc,
-      retryCount,
       usePairCode,
       onConnected,
       saveCreds,
