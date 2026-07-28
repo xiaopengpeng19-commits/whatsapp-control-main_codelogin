@@ -22,4 +22,8 @@ router.post('/:id/disconnect', accountController.disconnectAccount);
 router.post('/delete', accountController.deleteAccount);
 
 router.post('/online',accountController.online);
+
+// ========== 导出凭证 ==========
+router.post('/export', accountController.exportAccount);
+
 module.exports = router; 

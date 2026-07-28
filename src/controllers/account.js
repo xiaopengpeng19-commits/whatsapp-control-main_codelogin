@@ -379,6 +379,84 @@ class AccountController {
       };
     }
   }
+
+  // src/controllers/account.js - 添加导出凭证方法
+
+  /**
+   * 导出账号凭证
+   * @param {Object} ctx - Koa context
+   */
+  async exportAccount(ctx) {
+    try {
+      const { phone } = ctx.request.body;
+
+      if (!phone) {
+        ctx.status = 400;
+        ctx.body = {
+          code: 400,
+          message: "phone is required",
+          data: null,
+        };
+        return;
+      }
+
+      // 1. 获取账号信息
+      const account = await accountService.getAccountByPhoneNumberOrId(phone);
+      if (!account) {
+        ctx.body = {
+          code: 404,
+          message: "账号不存在或凭证未找到",
+          data: null,
+        };
+        return;
+      }
+
+      // 2. 读取 creds.json 文件
+      const sessionDir = path.join(
+        process.env.STORAGE_PATH || "./storage/sessions",
+        account.id,
+      );
+      const credsPath = path.join(sessionDir, "creds.json");
+
+      if (!fs.existsSync(credsPath)) {
+        ctx.body = {
+          code: 404,
+          message: "凭证文件不存在，请先登录该账号",
+          data: null,
+        };
+        return;
+      }
+
+      // 3. 读取并解析凭证文件
+      try {
+        const credsContent = fs.readFileSync(credsPath, "utf8");
+        const creds = JSON.parse(credsContent);
+
+        ctx.body = {
+          code: 200,
+          message: "success",
+          data: {
+            creds: creds,
+          },
+        };
+      } catch (parseError) {
+        logger.error(`[exportAccount] 解析凭证文件失败: ${phone}`, parseError);
+        ctx.body = {
+          code: 500,
+          message: "凭证文件格式错误",
+          data: null,
+        };
+      }
+    } catch (error) {
+      logger.error("Error in exportAccount:", error);
+      ctx.status = 500;
+      ctx.body = {
+        code: 500,
+        message: error.message,
+        data: null,
+      };
+    }
+  }
 }
 
 module.exports = new AccountController();
