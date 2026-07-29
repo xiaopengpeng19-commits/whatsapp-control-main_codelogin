@@ -215,18 +215,32 @@ async function createConnection(
         );
       }
 
-      if (events["groups.update"]) {
-        for (const event of events["groups.update"] || []) {
-          const metadata = await sock.groupMetadata(event.id);
-          groupCache.set(event.id, metadata);
-        }
-      }
+      // if (events["groups.update"]) {
+      //   for (const event of events["groups.update"] || []) {
+      //     const metadata = await sock.groupMetadata(event.id);
+      //     groupCache.set(event.id, metadata);
+      //   }
+      // }
+
+      // if (events["group-participants.update"]) {
+      //   for (const event of events["group-participants.update"] || []) {
+      //     const metadata = await sock.groupMetadata(event.id);
+      //     groupCache.set(event.id, metadata);
+      //   }
+      // }
 
       if (events["group-participants.update"]) {
-        for (const event of events["group-participants.update"] || []) {
-          const metadata = await sock.groupMetadata(event.id);
-          groupCache.set(event.id, metadata);
-        }
+        logger.info(
+          `[${accountId}] group-participants.update 事件:`,
+          events["group-participants.update"],
+        );
+      }
+
+      if (events["groups.update"]) {
+        logger.info(
+          `[${accountId}] groups.update 事件:`,
+          events["groups.update"],
+        );
       }
     });
 
