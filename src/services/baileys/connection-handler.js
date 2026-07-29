@@ -109,29 +109,23 @@ function handleQRCode(sock, account, qr, ctx) {
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected } = ctx;
 
-  // ========== 防止重复处理 ==========
   if (ctx._resolved) {
     logger.debug(`[${accountId}] 连接已处理，跳过重复关闭事件`);
     return;
   }
 
-  const statusCode =
-    lastDisconnect?.error instanceof Boom
-      ? lastDisconnect.error?.output?.statusCode
-      : null;
+  const statusCode = lastDisconnect?.error instanceof Boom
+    ? lastDisconnect.error?.output?.statusCode
+    : null;
   const isManualClose = sock._manualClose === true;
-
-  // ========== 确保 rejectFunc 存在 ==========
-  if (!rejectFunc || typeof rejectFunc !== "function") {
-    logger.error(`[${accountId}] rejectFunc 无效，跳过错误处理`);
-    return;
-  }
 
   // 手动关闭
   if (isManualClose) {
     logger.info(`[${accountId}] 手动关闭连接`);
     ctx.connections.delete(accountId);
-    rejectFunc(new Error("手动关闭"));
+    if (rejectFunc && typeof rejectFunc === 'function') {
+      rejectFunc(new Error('手动关闭'));
+    }
     return;
   }
 
@@ -139,44 +133,71 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   if (statusCode === 515) {
     ctx._resolved = true;
     logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
-    const { createConnection } = require("./connect");
+    const { createConnection } = require('./connect');
     createConnection(account, onConnected, true)
       .then((result) => {
-        if (result?.status === "connected") {
+        if (result?.status === 'connected') {
           ctx.connections.set(accountId, result.sock);
-          if (resolveFunc && typeof resolveFunc === "function") {
+          if (resolveFunc && typeof resolveFunc === 'function') {
             resolveFunc(result);
           }
         } else {
-          rejectFunc(new Error("重启连接失败"));
+          if (rejectFunc && typeof rejectFunc === 'function') {
+            rejectFunc(new Error('重启连接失败'));
+          }
         }
       })
-      .catch((err) => rejectFunc(err));
+      .catch((err) => {
+        if (rejectFunc && typeof rejectFunc === 'function') {
+          rejectFunc(err);
+        }
+      });
+    return;
+  }
+
+  // ========== 401/403：凭证失效，彻底清理 ==========
+  if (statusCode === 401 || statusCode === 403) {
+    logger.warn(`[${accountId}] 凭证已失效 (${statusCode})，彻底清理账号数据`);
+    
+    // 异步清理，不阻塞
+    setImmediate(async () => {
+      try {
+        // 1. 从 Redis 删除账号
+        const redisStorage = require('../redisStorage');
+        await redisStorage.deleteAccount(accountId);
+        logger.info(`[${accountId}] 已从 Redis 删除`);
+        
+        // 2. 删除 session 目录
+        const sessionDir = path.join(process.env.STORAGE_PATH || './storage/sessions', String(accountId));
+        if (fs.existsSync(sessionDir)) {
+          fs.rmSync(sessionDir, { recursive: true, force: true });
+          logger.info(`[${accountId}] 已删除会话目录: ${sessionDir}`);
+        }
+      } catch (error) {
+        logger.error(`[${accountId}] 清理账号数据失败:`, error);
+      }
+    });
+    
+    // 3. 从内存连接池删除
+    ctx.connections.delete(accountId);
+    
+    // 4. 通知上层凭证已失效
+    if (rejectFunc && typeof rejectFunc === 'function') {
+      rejectFunc(new Error(`凭证已失效，请重新登录 (${statusCode})`));
+    }
     return;
   }
 
   // ========== 其他错误 ==========
-  const status =
-    statusCode === 403 || statusCode === 401
-      ? LOGIN_STATUS.BANNED
-      : LOGIN_STATUS.EXPIRED;
-
-  if (statusCode === 403 || statusCode === 401) {
-    sock.socket_status = "disconnected";
-  }
-
-  updateAccountStatus(
-    accountId,
-    account.phoneNumber,
-    status,
-    sock.socket_status || "connected"
-  );
-  cleanupSession(accountId);
+  const status = LOGIN_STATUS.EXPIRED;
+  updateAccountStatus(accountId, account.phoneNumber, status, 'disconnected');
   ctx.connections.delete(accountId);
 
-  rejectFunc(
-    new Error(`连接关闭: ${lastDisconnect?.error?.message || "未知错误"}`)
-  );
+  if (rejectFunc && typeof rejectFunc === 'function') {
+    rejectFunc(
+      new Error(`连接关闭: ${lastDisconnect?.error?.message || '未知错误'}`)
+    );
+  }
 }
 
 function handleConnectionOpen(sock, account, ctx) {
