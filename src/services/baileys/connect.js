@@ -273,12 +273,14 @@ async function getConnection(
   callback = null,
   proxyOverride = null,
 ) {
+  // 1. 检查内存连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
     if (sock?.user) return sock;
     connections.delete(identifier);
   }
 
+  // 2. 从 Redis 获取账号
   const accountService = require("../account");
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
@@ -286,16 +288,26 @@ async function getConnection(
     return null;
   }
 
+  // 3. 如果传入了 proxyOverride，覆盖 account.proxy
   if (proxyOverride) {
     account.proxy = proxyOverride;
   }
 
+  // 4. 检查内存连接（用 account.id）
   if (connections.has(account.id)) return connections.get(account.id);
 
+  // 5. 创建新连接
   const result = await createConnection(account, callback);
-  return result?.status === "connected" ? result.sock : null;
-}
 
+  if (result?.status === "connected") {
+    return result.sock;
+  }
+
+  // ========== 返回 null，但错误信息在 result.error 中 ==========
+  // 调用方可以通过 catch 或检查 result 来获取具体错误
+  // 这里 throw 出去让上层 catch
+  throw new Error(result?.error || "连接失败");
+}
 async function closeConnection(accountId) {
   if (connections.has(accountId)) {
     try {
