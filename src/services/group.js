@@ -9,40 +9,87 @@ class GroupService {
   /**
    * Create a new group
    */
+  // src/services/group.js
+
+  /**
+   * Create a new group
+   */
   async createGroup(accountId, name, participants) {
     try {
-      const sock = await getConnection(accountId);
-      if (!sock) {
-        throw new Error("WhatsApp connection not found");
+      // ========== 获取连接 ==========
+      let sock;
+      try {
+        sock = await getConnection(accountId);
+      } catch (connError) {
+        logger.error(`[createGroup] 获取连接失败:`, connError);
+        return {
+          code: 500,
+          message: `获取连接失败: ${connError.message || "未知错误"}`,
+          data: null,
+        };
       }
 
+      if (!sock) {
+        return {
+          code: 500,
+          message: "账号不存在或未连接",
+          data: null,
+        };
+      }
+
+      // ========== 创建群组 ==========
       const response = await sock.groupCreate(name, participants);
       const groupId = response.id;
 
-      const group = await redisStorage.saveGroup({
-        accountId,
-        groupId,
-        name,
-        participants: participants.map((p) => ({ id: p, isAdmin: false })),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      // ========== 保存到 Redis ==========
+      let group = null;
+      try {
+        group = await redisStorage.saveGroup({
+          accountId,
+          groupId,
+          name,
+          participants: participants.map((p) => ({ id: p, isAdmin: false })),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (saveError) {
+        logger.error(`[createGroup] 保存到 Redis 失败:`, saveError);
+        // 不阻断流程
+      }
 
-      await nats.publishMessage("group.event", {
-        accountId: accountId,
-        eventType: "group.created",
+      // ========== 推送到 NATS ==========
+      try {
+        await nats.publishMessage("group.event", {
+          accountId: accountId,
+          eventType: "group.created",
+          data: {
+            groupId: groupId,
+            name: name,
+            participants: participants,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (natsError) {
+        logger.error(`[createGroup] 推送 NATS 失败:`, natsError);
+        // 不阻断流程
+      }
+
+      return {
+        code: 200,
+        message: "群组创建成功",
         data: {
           groupId: groupId,
           name: name,
           participants: participants,
         },
-        timestamp: new Date().toISOString(),
-      });
-
-      return group;
+      };
     } catch (error) {
-      logger.error("Error creating group:", error);
-      throw error;
+      logger.error("[createGroup] 失败:", error);
+      return {
+        code: 500,
+        message: error.message || "创建群组失败",
+        data: null,
+      };
     }
   }
 
