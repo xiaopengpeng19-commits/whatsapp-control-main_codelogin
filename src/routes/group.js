@@ -1,23 +1,24 @@
-const Router = require('koa-router');
-const groupController = require('../controllers/group');
-const { validateGroup } = require('../middleware/validation');
+// src/routes/group.js
+const Router = require("koa-router");
+const groupController = require("../controllers/group");
 
 const router = new Router();
 
-// router.get('/', groupController.getAllGroups);
+router.post("/create", groupController.createGroup);
+router.post("/leave", groupController.leaveGroup);
+router.post("/invite", groupController.getInviteCode);
+router.post("/join", groupController.joinGroup);
+router.post("/info", groupController.groupInfo);
+router.post("/list", groupController.groupAllInfo);
+router.post("/members", groupController.groupParticipantsUpdate);
+router.post("/send", groupController.sendGroupMessage);
 
-router.post('/', groupController.createGroup);
-router.post('/leaveGroup', groupController.leaveGroup);
-router.post('/getInviteCode', groupController.getInviteCode);
-router.post('/joinGroup', groupController.joinGroup);
-router.post('/groupInfo', groupController.groupInfo);
-router.post('/groupAllInfo', groupController.groupAllInfo);
-router.get('/:id', groupController.getGroup);
+// 兼容旧路由
+router.post("/", groupController.createGroup);
+router.post("/leaveGroup", groupController.leaveGroup);
+router.post("/getInviteCode", groupController.getInviteCode);
+router.post("/joinGroup", groupController.joinGroup);
+router.post("/groupInfo", groupController.groupInfo);
+router.post("/groupAllInfo", groupController.groupAllInfo);
 
-router.post('/:id/participants', groupController.addParticipants);
-
-router.delete('/:id/participants', groupController.removeParticipants);
-
-router.delete('/:id', groupController.deleteGroup);
-
-module.exports = router; 
+module.exports = router;

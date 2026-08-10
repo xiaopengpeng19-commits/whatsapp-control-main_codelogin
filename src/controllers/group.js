@@ -1,344 +1,315 @@
-const { getModule } = require('../utils/logger'); const logger = getModule('controller');
-const { getConnection} = require('../services/baileys/connect');
-// In-memory storage for development
-const groups = [];
+// src/controllers/group.js
+const { getModule } = require("../utils/logger");
+const logger = getModule("controller");
+const { getConnection } = require("../services/baileys/connect");
+const groupService = require("../services/group");
+const nats = require("../config/nats");
 
 class GroupController {
-  /**
-   * Get all groups
-   */
-  async getAllGroups(ctx) {
-    try {
-      // In a real implementation, this would fetch from a database
-      
-
-    } catch (error) {
-      logger.error('Error in getAllGroups:', error);
-      ctx.status = 500;
-      ctx.body = {
-        message: error.message
-      };
-    }
-  }
-
   /**
    * Create a new group
    */
   async createGroup(ctx) {
     try {
-      const { title, accountId} = ctx.request.body;
-      const connection=await getConnection(accountId);
-      
-      if(!connection){
-        ctx.body={
-          status:500,
-          message:'Account not connected'
-        }
-        return;
-      }
- 
-      const groupcreated=await connection.groupCreate(title,['8615936208327@s.whatsapp.net']);
-      logger.info('groupcreated',groupcreated);
-      if(!groupcreated){
-        ctx.body={
-          status:500,
-          message:'Group not created'
-        }
-        return;
-      }
-      ctx.body={
-        status:200,
-     
-        data:groupcreated.id
-      }
-    } catch (error) {
-      logger.error('Error in createGroup:', error);
+      const { title, accountId, participants } = ctx.request.body;
 
-      ctx.body = {
-        status:500,
-        data: error.message
-      };
+      if (!title) {
+        ctx.body = { code: 400, message: "title is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+
+      const result = await groupService.createGroup(
+        accountId,
+        title,
+        participants || []
+      );
+      ctx.body = result;
+    } catch (error) {
+      logger.error("Error in createGroup:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
     }
   }
-  async leaveGroup(ctx) {
-    try {
-      const { groupId, accountId} = ctx.request.body;
-      const connection=await getConnection(accountId);
-      
-      if(!connection){
-        ctx.body={
-          status:500,
-          message:'Account not connected'
-        }
-        return;
-      }
- 
-      await connection.groupLeave(groupId);
-    
-      ctx.body={
-        status:200,
-     
-        data:'Group left successfully'
-      }
-    } catch (error) {
-      logger.error('Error in createGroup:', error);
-
-      ctx.body = {
-        status:500,
-        data: error.message
-      };
-    }
-  }
- async getInviteCode(ctx) {
-    try {
-      const { groupId, accountId} = ctx.request.body;
-      const connection=await getConnection(accountId);
-      
-      if(!connection){
-        ctx.body={
-          status:500,
-          message:'Account not connected'
-        }
-        return;
-      }
- 
-      const code=await connection.groupInviteCode(groupId);
-    
-      ctx.body={
-        status:200,
-     
-        data:code
-      }
-    } catch (error) {
-      logger.error('Error in getInviteCode:', error);
-
-      ctx.body = {
-        status:500,
-        data: error.message
-      };
-    }
-  }
-  async joinGroup(ctx) {
-    try {
-      const { code, accountId} = ctx.request.body;
-      const connection=await getConnection(accountId);
-      
-      if(!connection){
-        ctx.body={
-          status:500,
-          message:'Account not connected'
-        }
-        return;
-      }
- 
-      const responsed=await await connection.groupAcceptInvite(code)
-    
-      ctx.body={
-        status:200,
-     
-        data:responsed
-      }
-    } catch (error) {
-      logger.error('Error in getInviteCode:', error);
-
-      ctx.body = {
-        status:500,
-        data: error.message
-      };
-    }
-  }
-  async groupInfo(ctx) {
-    try {
-      const { groupId, accountId} = ctx.request.body;
-      const connection=await getConnection(accountId);
-      
-      if(!connection){
-        ctx.body={
-          status:500,
-          message:'Account not connected'
-        }
-        return;
-      }
- 
-      const responsed=await await connection.groupMetadata(groupId)
-    
-      ctx.body={
-        status:200,
-     
-        data:responsed
-      }
-    } catch (error) {
-      logger.error('Error in getInviteCode:', error);
-
-      ctx.body = {
-        status:500,
-        data: error.message
-      };
-    }
-  }
-  async groupAllInfo(ctx) {
-    try {
-      const { accountId} = ctx.request.body;
-      const connection=await getConnection(accountId);
-      
-      if(!connection){
-        ctx.body={
-          status:500,
-          message:'Account not connected'
-        }
-        return;
-      }
- 
-      const responsed=await await connection.groupFetchAllParticipating()
-    
-      ctx.body={
-        status:200,
-     
-        data:responsed
-      }
-    } catch (error) {
-      logger.error('Error in getInviteCode:', error);
-
-      ctx.body = {
-        status:500,
-        data: error.message
-      };
-    }
-  }
-  
 
   /**
-   * Get a group by ID
+   * Leave a group
    */
-  async getGroup(ctx) {
+  async leaveGroup(ctx) {
     try {
-      const { id } = ctx.params;
-      const group = groups.find(g => g.id === id);
+      const { groupId, accountId } = ctx.request.body;
 
-      if (!group) {
-        ctx.status = 404;
+      if (!groupId) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+
+      const result = await groupService.LeaveGroup(accountId, { groupId });
+      ctx.body = result;
+    } catch (error) {
+      logger.error("Error in leaveGroup:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
+
+  /**
+   * Get group invite code
+   */
+  async getInviteCode(ctx) {
+    try {
+      const { groupId, accountId } = ctx.request.body;
+
+      if (!groupId) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+
+      const result = await groupService.GetGroupInviteCode(accountId, {
+        groupId,
+      });
+      ctx.body = result;
+    } catch (error) {
+      logger.error("Error in getInviteCode:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
+
+  /**
+   * Join a group by invite code
+   */
+  async joinGroup(ctx) {
+    try {
+      const { code, accountId } = ctx.request.body;
+
+      if (!code) {
+        ctx.body = { code: 400, message: "code is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+
+      const result = await groupService.JoinGroupByInvite(accountId, {
+        inviteCode: code,
+      });
+      ctx.body = result;
+    } catch (error) {
+      logger.error("Error in joinGroup:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
+
+  /**
+   * Get group info from WhatsApp
+   */
+  async groupInfo(ctx) {
+    try {
+      const { groupId, accountId } = ctx.request.body;
+
+      if (!groupId) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+
+      const result = await groupService.GetGroupInfo(accountId, { groupId });
+      ctx.body = result;
+    } catch (error) {
+      logger.error("Error in groupInfo:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
+
+  /**
+   * Get all groups from WhatsApp
+   */
+  async groupAllInfo(ctx) {
+    try {
+      const { accountId } = ctx.request.body;
+
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+
+      const result = await groupService.GetGroupList(accountId);
+      ctx.body = result;
+    } catch (error) {
+      logger.error("Error in groupAllInfo:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
+
+  /**
+   * Group participants update (add/remove/promote/demote)
+   */
+  async groupParticipantsUpdate(ctx) {
+    try {
+      const { groupId, accountId, participants, action } = ctx.request.body;
+
+      if (!groupId) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+      if (!participants || !Array.isArray(participants) || participants.length === 0) {
         ctx.body = {
-          message: 'Group not found'
+          code: 400,
+          message: "participants must be a non-empty array",
+          data: null,
+        };
+        return;
+      }
+      if (!["add", "remove", "promote", "demote"].includes(action)) {
+        ctx.body = {
+          code: 400,
+          message: "action must be add/remove/promote/demote",
+          data: null,
         };
         return;
       }
 
-      ctx.body = group;
+      const result = await groupService.GroupParticipantsUpdate(accountId, {
+        groupId,
+        participants,
+        action,
+      });
+      ctx.body = result;
     } catch (error) {
-      logger.error('Error in getGroup:', error);
-      ctx.status = 500;
-      ctx.body = {
-        message: error.message
-      };
+      logger.error("Error in groupParticipantsUpdate:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
     }
   }
 
   /**
-   * Add participants to a group
+   * Get group invite code (legacy)
+   */
+  async getGroup(ctx) {
+    try {
+      const { id } = ctx.params;
+      // Not implemented - use groupInfo instead
+      ctx.body = { code: 404, message: "Not implemented, use groupInfo", data: null };
+    } catch (error) {
+      logger.error("Error in getGroup:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
+
+  /**
+   * Add participants (legacy)
    */
   async addParticipants(ctx) {
     try {
       const { id } = ctx.params;
       const { participants } = ctx.request.body;
-      
-      const groupIndex = groups.findIndex(g => g.id === id);
+      const { accountId } = ctx.request.body;
 
-      if (groupIndex === -1) {
-        ctx.status = 404;
-        ctx.body = {
-          message: 'Group not found'
-        };
+      if (!id) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
         return;
       }
 
-      // Add participants
-      const group = groups[groupIndex];
-      const newParticipants = Array.from(new Set([...group.participants, ...participants]));
-      
-      groups[groupIndex] = {
-        ...group,
-        participants: newParticipants,
-        updatedAt: new Date().toISOString()
-      };
-
-      ctx.body = groups[groupIndex];
+      const result = await groupService.GroupParticipantsUpdate(accountId, {
+        groupId: id,
+        participants: participants || [],
+        action: "add",
+      });
+      ctx.body = result;
     } catch (error) {
-      logger.error('Error in addParticipants:', error);
-      ctx.status = 500;
-      ctx.body = {
-        message: error.message
-      };
+      logger.error("Error in addParticipants:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
     }
   }
 
   /**
-   * Remove participants from a group
+   * Remove participants (legacy)
    */
   async removeParticipants(ctx) {
     try {
       const { id } = ctx.params;
       const { participants } = ctx.request.body;
-      
-      const groupIndex = groups.findIndex(g => g.id === id);
+      const { accountId } = ctx.request.body;
 
-      if (groupIndex === -1) {
-        ctx.status = 404;
-        ctx.body = {
-          message: 'Group not found'
-        };
+      if (!id) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
         return;
       }
 
-      // Remove participants
-      const group = groups[groupIndex];
-      const newParticipants = group.participants.filter(p => !participants.includes(p));
-      
-      groups[groupIndex] = {
-        ...group,
-        participants: newParticipants,
-        updatedAt: new Date().toISOString()
-      };
-
-      ctx.body = groups[groupIndex];
+      const result = await groupService.GroupParticipantsUpdate(accountId, {
+        groupId: id,
+        participants: participants || [],
+        action: "remove",
+      });
+      ctx.body = result;
     } catch (error) {
-      logger.error('Error in removeParticipants:', error);
-      ctx.status = 500;
-      ctx.body = {
-        message: error.message
-      };
+      logger.error("Error in removeParticipants:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
     }
   }
 
   /**
-   * Delete a group
+   * Delete group (legacy)
    */
   async deleteGroup(ctx) {
     try {
       const { id } = ctx.params;
-      const groupIndex = groups.findIndex(g => g.id === id);
+      ctx.body = { code: 404, message: "Not implemented, use LeaveGroup", data: null };
+    } catch (error) {
+      logger.error("Error in deleteGroup:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
+    }
+  }
 
-      if (groupIndex === -1) {
-        ctx.status = 404;
-        ctx.body = {
-          message: 'Group not found'
-        };
+  /**
+   * Send group message
+   */
+  async sendGroupMessage(ctx) {
+    try {
+      const { groupId, accountId, text, type, media, caption } = ctx.request.body;
+
+      if (!groupId) {
+        ctx.body = { code: 400, message: "groupId is required", data: null };
+        return;
+      }
+      if (!accountId) {
+        ctx.body = { code: 400, message: "accountId is required", data: null };
+        return;
+      }
+      if (!text && type !== "image" && type !== "video") {
+        ctx.body = { code: 400, message: "text is required", data: null };
         return;
       }
 
-      // Remove group
-      groups.splice(groupIndex, 1);
-
-      ctx.body = {
-        message: 'Group deleted successfully'
-      };
+      const result = await groupService.SendGroupMessage(accountId, {
+        groupId,
+        text,
+        type: type || "text",
+        media,
+        caption,
+      });
+      ctx.body = result;
     } catch (error) {
-      logger.error('Error in deleteGroup:', error);
-      ctx.status = 500;
-      ctx.body = {
-        message: error.message
-      };
+      logger.error("Error in sendGroupMessage:", error);
+      ctx.body = { code: 500, message: error.message, data: null };
     }
   }
 }
 
-module.exports = new GroupController(); 
+module.exports = new GroupController();
