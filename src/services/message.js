@@ -10,7 +10,12 @@ const { sendButtons } = require("malvin-btns");
 
 function normalizeJid(jid) {
   if (!jid) return jid;
-  return jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
+  
+  // 已经有 @ 了，直接返回（群ID或个人ID都包含 @）
+  if (jid.includes("@")) return jid;
+  
+  // 纯数字 → 私聊
+  return `${jid}@s.whatsapp.net`;
 }
 
 class MessageService {
