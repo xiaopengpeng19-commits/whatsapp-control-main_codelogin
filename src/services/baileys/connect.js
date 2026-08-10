@@ -115,18 +115,26 @@ async function createConnection(
     };
     const connectionHandler = createConnectionHandler(sock, account, ctx);
 
-    sock.ev.process(async (events) => {
-      logger.info("触发事件:", Object.keys(events));
+    // src/services/baileys/connect.js
 
+    sock.ev.process(async (events) => {
+      const eventKeys = Object.keys(events);
+      if (eventKeys.length > 0) {
+        logger.info(`[${accountId}] 触发事件:`, eventKeys);
+      }
+
+      // 1. 凭证更新
       if (events["creds.update"]) {
         await saveCreds();
         baileysLogger.debug(`[${accountId}] 凭证已保存`);
       }
 
+      // 2. 连接状态更新
       if (events["connection.update"]) {
         connectionHandler(events["connection.update"]);
       }
 
+      // 3. 联系人更新（手机端添加联系人时触发）
       if (events["contacts.upsert"]) {
         const contacts = events["contacts.upsert"];
         logger.info(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
@@ -155,6 +163,7 @@ async function createConnection(
         }
       }
 
+      // 4. 历史同步
       if (events["messaging-history.set"]) {
         if (account.phoneNumber) {
           await setAccountSyncFlag(account.phoneNumber, true);
@@ -165,14 +174,24 @@ async function createConnection(
         await handleMessagingHistory(events, accountId, account.phoneNumber);
       }
 
+      // 5. 新消息
       if (events["messages.upsert"]) {
         const upsert = events["messages.upsert"];
+
+        // 打印完整数据（调试用）
+        logger.info(
+          `[${accountId}] messages.upsert 数据:`,
+          JSON.stringify(upsert, null, 2),
+        );
+
         if (upsert.type === "notify" || upsert.type === "append") {
           sock.lastActiveTime = new Date();
           for (const msg of upsert.messages || []) {
             const text =
               msg.message?.conversation ||
               msg.message?.extendedTextMessage?.text;
+
+            // 特殊命令处理
             if (text === "requestPlaceholder" && !upsert.requestId) {
               await sock.requestPlaceholderResend(msg.key);
               continue;
@@ -181,6 +200,7 @@ async function createConnection(
               await sock.fetchMessageHistory(50, msg.key, msg.messageTimestamp);
               continue;
             }
+
             await handleIncomingMessage(
               sock,
               msg,
@@ -191,6 +211,7 @@ async function createConnection(
         }
       }
 
+      // 6. 消息状态更新（已读/送达）
       if (events["messages.update"]) {
         await handleMessageStatusUpdate(
           events["messages.update"],
@@ -199,6 +220,7 @@ async function createConnection(
         );
       }
 
+      // 7. 消息回执
       if (events["message-receipt.update"]) {
         await handleMessageReceiptUpdate(
           events["message-receipt.update"],
@@ -207,7 +229,21 @@ async function createConnection(
         );
       }
 
+      // 8. 新群组
+      if (events["groups.upsert"]) {
+        logger.info(
+          `[${accountId}] groups.upsert 数据:`,
+          JSON.stringify(events["groups.upsert"], null, 2),
+        );
+        // TODO: 保存群组信息到 Redis
+      }
+
+      // 9. 新聊天会话
       if (events["chats.upsert"]) {
+        logger.info(
+          `[${accountId}] chats.upsert 数据:`,
+          JSON.stringify(events["chats.upsert"], null, 2),
+        );
         await handleChatsUpsert(
           events["chats.upsert"],
           accountId,
@@ -215,32 +251,22 @@ async function createConnection(
         );
       }
 
-      // if (events["groups.update"]) {
-      //   for (const event of events["groups.update"] || []) {
-      //     const metadata = await sock.groupMetadata(event.id);
-      //     groupCache.set(event.id, metadata);
-      //   }
-      // }
-
-      // if (events["group-participants.update"]) {
-      //   for (const event of events["group-participants.update"] || []) {
-      //     const metadata = await sock.groupMetadata(event.id);
-      //     groupCache.set(event.id, metadata);
-      //   }
-      // }
-
-      if (events["group-participants.update"]) {
-        logger.info(
-          `[${accountId}] group-participants.update 事件:`,
-          events["group-participants.update"],
-        );
-      }
-
+      // 10. 群组信息更新
       if (events["groups.update"]) {
         logger.info(
           `[${accountId}] groups.update 事件:`,
-          events["groups.update"],
+          JSON.stringify(events["groups.update"], null, 2),
         );
+        // TODO: 更新群组缓存
+      }
+
+      // 11. 群组成员更新
+      if (events["group-participants.update"]) {
+        logger.info(
+          `[${accountId}] group-participants.update 事件:`,
+          JSON.stringify(events["group-participants.update"], null, 2),
+        );
+        // TODO: 更新群组成员缓存
       }
     });
 
