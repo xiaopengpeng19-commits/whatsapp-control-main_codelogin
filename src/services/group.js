@@ -9,7 +9,7 @@ class GroupService {
   /**
    * Create a new group
    */
-  async createGroup(accountId, name, participants) {
+  async CreateGroup(accountId, name, participants) {
     try {
       const sock = await getConnection(accountId);
       if (!sock) {

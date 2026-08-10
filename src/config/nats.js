@@ -51,6 +51,7 @@ async function cmdpoll() {
 
   // 延迟加载服务以避免循环依赖
   const accountService = require("../services/account");
+  const groupService = require("../services/group");
   const messageService = require("../services/message");
 
   const Cmds = {
@@ -72,12 +73,12 @@ async function cmdpoll() {
     ImportAccount: (Account, Body) => accountService.ImportAccount.call(accountService, Account, Body),
 
     // ... 已有命令
-    GetGroupInfo: (Account, Body) => accountService.GetGroupInfo.call(accountService, Account, Body),
-    GetGroupList: (Account, Body) => accountService.GetGroupList.call(accountService, Account, Body),
-    GroupParticipantsUpdate: (Account, Body) => accountService.GroupParticipantsUpdate.call(accountService, Account, Body),
-    CreateGroup: (Account, Body) => accountService.CreateGroup.call(accountService, Account, Body),
-    SendGroupMessage: (Account, Body) => accountService.SendGroupMessage.call(accountService, Account, Body),
-    LeaveGroup: (Account, Body) => accountService.LeaveGroup.call(accountService, Account, Body),
+    GetGroupInfo: (Account, Body) => groupService.GetGroupInfo.call(accountService, Account, Body),
+    GetGroupList: (Account, Body) => groupService.GetGroupList.call(accountService, Account, Body),
+    GroupParticipantsUpdate: (Account, Body) => groupService.GroupParticipantsUpdate.call(accountService, Account, Body),
+    CreateGroup: (Account, Body) => groupService.CreateGroup.call(accountService, Account, Body),
+    SendGroupMessage: (Account, Body) => groupService.SendGroupMessage.call(accountService, Account, Body),
+    LeaveGroup: (Account, Body) => groupService.LeaveGroup.call(accountService, Account, Body),
   };
 
   logger.info("cmdssubscribe");
