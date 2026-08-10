@@ -190,29 +190,77 @@ async function createConnection(account, onConnected = null, usePairCode = false
         await handleMessageReceiptUpdate(events["message-receipt.update"], accountId, account.phoneNumber);
       }
 
-      // 8. 新群组
-      if (events["groups.upsert"]) {
-        logger.info(`[${accountId}] groups.upsert 数据:`, JSON.stringify(events["groups.upsert"], null, 2));
-        // TODO: 保存群组信息到 Redis
-      }
-
       // 9. 新聊天会话
       if (events["chats.upsert"]) {
         logger.info(`[${accountId}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
 
-      // 10. 群组信息更新
-      if (events["groups.update"]) {
-        logger.info(`[${accountId}] groups.update 事件:`, JSON.stringify(events["groups.update"], null, 2));
-        // TODO: 更新群组缓存
+      // src/services/baileys/connect.js - 在 sock.ev.process 中添加
+
+      // 群组成员变化
+      if (events["group-participants.update"]) {
+        const update = events["group-participants.update"];
+        logger.info(`[${accountId}] group-participants.update:`, JSON.stringify(update, null, 2));
+
+        await nats.publishMessage("group.event", {
+          accountId: accountId,
+          accountPhone: account.phoneNumber,
+          eventType: "group.participants.update",
+          data: {
+            groupId: update.id,
+            action: update.action,
+            author: update.author,
+            participants: update.participants,
+          },
+          timestamp: new Date().toISOString(),
+        });
       }
 
-      // 11. 群组成员更新
-      if (events["group-participants.update"]) {
-        logger.info(`[${accountId}] group-participants.update 事件:`, JSON.stringify(events["group-participants.update"], null, 2));
-        // TODO: 更新群组成员缓存
+      // 群组信息更新
+      if (events["groups.update"]) {
+        const updates = events["groups.update"];
+        logger.info(`[${accountId}] groups.update:`, JSON.stringify(updates, null, 2));
+
+        for (const update of updates) {
+          await nats.publishMessage("group.event", {
+            accountId: accountId,
+            accountPhone: account.phoneNumber,
+            eventType: "group.update",
+            data: {
+              groupId: update.id,
+              subject: update.subject || null,
+              announce: update.announce || null,
+              restrict: update.restrict || null,
+            },
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
+
+      // 新群组（被拉入群）
+      if (events["groups.upsert"]) {
+        const groups = events["groups.upsert"];
+        logger.info(`[${accountId}] groups.upsert:`, JSON.stringify(groups, null, 2));
+
+        for (const group of groups) {
+          await nats.publishMessage("group.event", {
+            accountId: accountId,
+            accountPhone: account.phoneNumber,
+            eventType: "group.upsert",
+            data: {
+              groupId: group.id,
+              subject: group.subject,
+              size: group.participants?.length || 0,
+              participants: group.participants || [],
+            },
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      // 群聊消息（在 messages.upsert 中判断）
+      // ... 已有 messages.upsert 处理中，如果 remoteJid 包含 @g.us，再推送一份到 group.event
     });
 
     const timeoutDuration = usePairCode ? 60000 : 120000;
