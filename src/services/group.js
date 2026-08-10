@@ -6,16 +6,22 @@ const { group } = require("../utils/logger");
 const logger = group;
 
 class GroupService {
-  /**
-   * Create a new group
-   */
-  // src/services/group.js
+  // src/services/group.js - createGroup 方法
 
   /**
    * Create a new group
    */
-  async createGroup(accountId, name, participants) {
+  async createGroup(accountId, body) {
     try {
+      const { subject, participants } = body || {};
+
+      if (!subject) {
+        return { code: 400, message: "subject is required", data: null };
+      }
+      if (!participants || !Array.isArray(participants) || participants.length === 0) {
+        return { code: 400, message: "participants must be a non-empty array", data: null };
+      }
+
       // ========== 获取连接 ==========
       let sock;
       try {
@@ -37,41 +43,50 @@ class GroupService {
         };
       }
 
+      // ========== 格式化参与者 JID ==========
+      const formattedParticipants = participants.map((p) => {
+        // 如果已经有 @，直接返回
+        if (p.includes("@")) return p;
+        // 否则加上 @s.whatsapp.net
+        return `${p}@s.whatsapp.net`;
+      });
+
       // ========== 创建群组 ==========
-      const response = await sock.groupCreate(name, participants);
+      const response = await sock.groupCreate(subject, formattedParticipants);
       const groupId = response.id;
 
       // ========== 保存到 Redis ==========
-      let group = null;
       try {
-        group = await redisStorage.saveGroup({
-          accountId,
-          groupId,
-          name,
-          participants: participants.map((p) => ({ id: p, isAdmin: false })),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
+        if (redisStorage && typeof redisStorage.saveGroup === "function") {
+          await redisStorage.saveGroup({
+            accountId,
+            groupId,
+            name: subject,
+            participants: formattedParticipants.map((p) => ({ id: p, isAdmin: false })),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
       } catch (saveError) {
         logger.error(`[createGroup] 保存到 Redis 失败:`, saveError);
-        // 不阻断流程
       }
 
       // ========== 推送到 NATS ==========
       try {
-        await nats.publishMessage("group.event", {
-          accountId: accountId,
-          eventType: "group.created",
-          data: {
-            groupId: groupId,
-            name: name,
-            participants: participants,
-          },
-          timestamp: new Date().toISOString(),
-        });
+        if (nats && typeof nats.publishMessage === "function") {
+          await nats.publishMessage("group.event", {
+            accountId: accountId,
+            eventType: "group.created",
+            data: {
+              groupId: groupId,
+              name: subject,
+              participants: formattedParticipants,
+            },
+            timestamp: new Date().toISOString(),
+          });
+        }
       } catch (natsError) {
         logger.error(`[createGroup] 推送 NATS 失败:`, natsError);
-        // 不阻断流程
       }
 
       return {
@@ -79,8 +94,8 @@ class GroupService {
         message: "群组创建成功",
         data: {
           groupId: groupId,
-          name: name,
-          participants: participants,
+          name: subject,
+          participants: formattedParticipants,
         },
       };
     } catch (error) {

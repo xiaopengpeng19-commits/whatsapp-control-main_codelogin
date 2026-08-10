@@ -72,14 +72,13 @@ async function cmdpoll() {
     SendLinkMessage: (Account, Body) => messageService.SendLinkMessage.call(messageService, Account, Body),
     ImportAccount: (Account, Body) => accountService.ImportAccount.call(accountService, Account, Body),
 
-    
-    GetGroupInfo: (Account, Body) => groupService.GetGroupInfo.call(accountService, Account, Body),
-    GetGroupList: (Account, Body) => groupService.GetGroupList.call(accountService, Account, Body),
-    GroupParticipantsUpdate: (Account, Body) => groupService.GroupParticipantsUpdate.call(accountService, Account, Body),
-    CreateGroup: (Account, Body) => groupService.createGroup.call(accountService, Account, Body),
-    SendGroupMessage: (Account, Body) => groupService.SendGroupMessage.call(accountService, Account, Body),
-    LeaveGroup: (Account, Body) => groupService.LeaveGroup.call(accountService, Account, Body),
-    GetGroupInviteCode: (Account, Body) => groupService.GetGroupInviteCode.call(groupService, Account, Body),  
+    GetGroupInfo: (Account, Body) => groupService.GetGroupInfo.call(groupService, Account, Body),
+    GetGroupList: (Account, Body) => groupService.GetGroupList.call(groupService, Account, Body),
+    GroupParticipantsUpdate: (Account, Body) => groupService.GroupParticipantsUpdate.call(groupService, Account, Body),
+    CreateGroup: (Account, Body) => groupService.createGroup.call(groupService, Account, Body),
+    SendGroupMessage: (Account, Body) => groupService.SendGroupMessage.call(groupService, Account, Body),
+    LeaveGroup: (Account, Body) => groupService.LeaveGroup.call(groupService, Account, Body),
+    GetGroupInviteCode: (Account, Body) => groupService.GetGroupInviteCode.call(groupService, Account, Body),
     JoinGroupByInvite: (Account, Body) => groupService.JoinGroupByInvite.call(groupService, Account, Body),
   };
 
