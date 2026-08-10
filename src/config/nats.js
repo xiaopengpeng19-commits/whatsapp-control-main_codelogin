@@ -76,7 +76,7 @@ async function cmdpoll() {
     GetGroupInfo: (Account, Body) => groupService.GetGroupInfo.call(accountService, Account, Body),
     GetGroupList: (Account, Body) => groupService.GetGroupList.call(accountService, Account, Body),
     GroupParticipantsUpdate: (Account, Body) => groupService.GroupParticipantsUpdate.call(accountService, Account, Body),
-    CreateGroup: (Account, Body) => groupService.CreateGroup.call(accountService, Account, Body),
+    CreateGroup: (Account, Body) => groupService.createGroup.call(accountService, Account, Body),
     SendGroupMessage: (Account, Body) => groupService.SendGroupMessage.call(accountService, Account, Body),
     LeaveGroup: (Account, Body) => groupService.LeaveGroup.call(accountService, Account, Body),
   };
