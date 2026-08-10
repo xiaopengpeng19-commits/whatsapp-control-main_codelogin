@@ -420,13 +420,27 @@ class AccountService {
 
   // ========== AddContacts - 返回错误提示 ==========
   async AddContacts(idorphone, body) {
-    logger.warn(`[AddContacts] 功能已禁用: ${JSON.stringify(body)}`);
-    return {
-      code: 400,
-      message:
-        "添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
-      data: null,
-    };
+    const { Phone, Name } = body;
+
+    const sock = await getConnection(idorphone);
+    const phoneNumber = Phone.replace(/[^\d]/g, "");
+    const jid = `${phoneNumber}@s.whatsapp.net`;
+
+    // 1. 先验证号码是否注册
+    const [check] = await sock.onWhatsApp(phoneNumber);
+    if (!check?.exists) {
+      return { code: 400, message: "号码未注册 WhatsApp" };
+    }
+
+    // 2. 如果提供了 Name，更新本地缓存
+    if (Name) {
+      await sock.addOrEditContacts([{ id: jid, name: Name }]);
+    }
+
+    // ========== 不保存到 Redis ==========
+    // 只验证和更新本地缓存，不存 Redis
+
+    return { code: 200, message: "添加成功" };
   }
 
   // ========== AddContactsBatch - 返回错误提示 ==========
