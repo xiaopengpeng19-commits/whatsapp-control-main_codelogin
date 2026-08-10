@@ -1,35 +1,35 @@
-require('dotenv').config();
-const Koa = require('koa');
-const Router = require('koa-router');
-const bodyParser = require('koa-bodyparser');
-const { koaSwagger } = require('koa2-swagger-ui');
-const swaggerSpec = require('./src/config/swagger');
-const { createServer } = require('http');
-const serve = require('koa-static');
-const path = require('path');
+require("dotenv").config();
+const Koa = require("koa");
+const Router = require("koa-router");
+const bodyParser = require("koa-bodyparser");
+const { koaSwagger } = require("koa2-swagger-ui");
+const swaggerSpec = require("./src/config/swagger");
+const { createServer } = require("http");
+const serve = require("koa-static");
+const path = require("path");
 
-const { getModule } = require('./src/utils/logger');
-const logger = getModule('app');
-const natsConfig = require('./src/config/nats');
+const { getModule } = require("./src/utils/logger");
+const logger = getModule("app");
+const natsConfig = require("./src/config/nats");
 
-const errorHandler = require('./src/middleware/errorHandler');
-const responseFormatter = require('./src/middleware/responseFormatter');
-const { sendRestartNotification } = require('./src/services/baileys/connect');
+const errorHandler = require("./src/middleware/errorHandler");
+const responseFormatter = require("./src/middleware/responseFormatter");
+const { sendRestartNotification } = require("./src/services/baileys/connect");
 // Import routes
-const accountRoutes = require('./src/routes/account');
-const contactRoutes = require('./src/routes/contact');
-const groupRoutes = require('./src/routes/group');
-const messageRoutes = require('./src/routes/message');
-const chatRoutes = require('./src/routes/chat');
+const accountRoutes = require("./src/routes/account");
+const contactRoutes = require("./src/routes/contact");
+const groupRoutes = require("./src/routes/group");
+const messageRoutes = require("./src/routes/message");
+const chatRoutes = require("./src/routes/chat");
 const app = new Koa();
 const router = new Router();
 
 // Connect to NATS
-natsConfig.connectNats().then(nc => {
+natsConfig.connectNats().then((nc) => {
   if (nc) {
-    logger.info('NATS connection established');
+    logger.info("NATS connection established");
   } else {
-    logger.warn('Failed to establish NATS connection');
+    logger.warn("Failed to establish NATS connection");
   }
 });
 
@@ -38,26 +38,25 @@ app.use(bodyParser());
 app.use(errorHandler);
 
 // Swagger endpoint
-router.get('/swagger.json', ctx => {
-  ctx.type = 'application/json';
+router.get("/swagger.json", (ctx) => {
+  ctx.type = "application/json";
   ctx.body = swaggerSpec;
 });
 
 // Routes
-router.use('/api/accounts', accountRoutes.routes());
+router.use("/api/accounts", accountRoutes.routes());
 
-
-router.use('/api/contacts', contactRoutes.routes());
-router.use('/api/groups', groupRoutes.routes());
-router.use('/api/messages', messageRoutes.routes());
-router.use('/api/chats', chatRoutes.routes());
+router.use("/api/contacts", contactRoutes.routes());
+router.use("/api/groups", groupRoutes.routes());
+router.use("/api/messages", messageRoutes.routes());
+router.use("/api/chats", chatRoutes.routes());
 // Add a root route
-router.get('/', ctx => {
+router.get("/", (ctx) => {
   ctx.body = {
     success: true,
-    message: 'WhatsApp Control System API',
-    version: '1.0.0',
-    documentation: '/api-docs'
+    message: "WhatsApp Control System API",
+    version: "1.0.0",
+    documentation: "/api-docs",
   };
 });
 
@@ -70,17 +69,17 @@ app.use(responseFormatter);
 // Apply Swagger UI middleware last
 app.use(
   koaSwagger({
-    routePrefix: '/api-docs', // host at /api-docs
+    routePrefix: "/api-docs", // host at /api-docs
     swaggerOptions: {
-      url: '/swagger.json', // example path to json
-      docExpansion: 'none',
+      url: "/swagger.json", // example path to json
+      docExpansion: "none",
       defaultModelsExpandDepth: 0,
-      operationsSorter: 'alpha'
+      operationsSorter: "alpha",
     },
     hideTopbar: false,
-    title: 'WhatsApp API Documentation',
+    title: "WhatsApp API Documentation",
     exposeSpec: true,
-    specPrefix: '/swagger.json'
+    specPrefix: "/swagger.json",
   }),
 );
 
@@ -88,58 +87,59 @@ app.use(
 const server = createServer(app.callback());
 
 // Import the connection service
-const baileysConnect = require('./src/services/baileys/connect');
+const baileysConnect = require("./src/services/baileys/connect");
 
 server.listen(process.env.PORT || 8080, () => {
   logger.info(`Server running on port ${process.env.PORT || 8080}`);
   logger.info(`Swagger API documentation available at http://localhost:${process.env.PORT || 8080}/api-docs`);
-  
+
   // Set up interval to check and disconnect idle connections every 15 minutes
-  setInterval(async () => {
-    try {
-      await baileysConnect.intervalStopIdelConnection();
-    } catch (error) {
-      logger.error('Error checking idle connections:', error);
-    }
-  }, 15 * 60 * 1000);
+  setInterval(
+    async () => {
+      try {
+        await baileysConnect.intervalStopIdelConnection();
+      } catch (error) {
+        logger.error("Error checking idle connections:", error);
+      }
+    },
+    15 * 60 * 1000,
+  );
 
   // 发送重启通知
   setTimeout(() => {
     sendRestartNotification().catch(console.error);
   }, 2000);
 
-  logger.info('Idle connection checker initialized');
+  logger.info("Idle connection checker initialized");
 });
 
 // Handle application shutdown to gracefully close connections
-process.on('SIGINT', async () => {
-  logger.info('Application shutting down...');
-  
+process.on("SIGINT", async () => {
+  logger.info("Application shutting down...");
+
   // Close NATS connection
   await natsConfig.closeConnection();
-  
+
   // Other cleanup code
-  
+
   process.exit(0);
 });
 
 // Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
-  logger.error('================ UNCAUGHT EXCEPTION ================');
+process.on("uncaughtException", (err) => {
+  logger.error("================ UNCAUGHT EXCEPTION ================");
   logger.error(err.message);
   logger.error(err.stack);
-  logger.error('====================================================');
-  logger.error('Uncaught Exception:', { error: err.message, stack: err.stack });
+  logger.error("====================================================");
+  logger.error("Uncaught Exception:", { error: err.message, stack: err.stack });
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('================ UNHANDLED REJECTION ================');
-  logger.error('Reason:', reason);
-  logger.error('Promise:', promise);
-  logger.error('=====================================================');
-  logger.error('Unhandled Rejection:', { reason: reason?.message || String(reason) });
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("================ UNHANDLED REJECTION ================");
+  logger.error("Reason:", reason);
+  logger.error("Promise:", promise);
+  logger.error("=====================================================");
+  logger.error("Unhandled Rejection:", { reason: reason?.message || String(reason) });
 });
 
-
-
-module.exports = server; 
+module.exports = server;

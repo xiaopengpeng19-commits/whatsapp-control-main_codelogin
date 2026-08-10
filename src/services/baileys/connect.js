@@ -12,20 +12,9 @@ const redisStorage = require("../redisStorage");
 const nats = require("../../config/nats");
 const snowflake = require("../../utils/snowflake");
 const { getAccountSyncFlag, setAccountSyncFlag } = require("../redisStorage");
-const {
-  LOGIN_STATUS,
-  groupCache,
-  msgRetryCounterCache,
-} = require("./constants");
-const {
-  getSessionDir,
-  createProxyAgent,
-  createBaileysLogger,
-} = require("./utils");
-const {
-  createConnectionHandler,
-  updateAccountStatus,
-} = require("./connection-handler");
+const { LOGIN_STATUS, groupCache, msgRetryCounterCache } = require("./constants");
+const { getSessionDir, createProxyAgent, createBaileysLogger } = require("./utils");
+const { createConnectionHandler, updateAccountStatus } = require("./connection-handler");
 const {
   handleIncomingMessage,
   handleMessageStatusUpdate,
@@ -37,11 +26,7 @@ const {
 const logger = conn;
 const connections = new Map();
 
-async function createConnection(
-  account,
-  onConnected = null,
-  usePairCode = false,
-) {
+async function createConnection(account, onConnected = null, usePairCode = false) {
   const accountId = account.id;
   let resolveFunc, rejectFunc;
 
@@ -63,9 +48,7 @@ async function createConnection(
       baileysLogger.trace = () => {};
     }
 
-    const hasSynced = account.phoneNumber
-      ? await getAccountSyncFlag(account.phoneNumber)
-      : false;
+    const hasSynced = account.phoneNumber ? await getAccountSyncFlag(account.phoneNumber) : false;
     const shouldSync = !hasSynced;
 
     const sock = makeWASocket({
@@ -88,9 +71,7 @@ async function createConnection(
         try {
           const stored = await redisStorage.getMessageById(key.id);
           if (stored?.message) {
-            return typeof stored.message === "string"
-              ? JSON.parse(stored.message)
-              : stored.message;
+            return typeof stored.message === "string" ? JSON.parse(stored.message) : stored.message;
           }
           return proto.Message.create({ conversation: "" });
         } catch (error) {
@@ -167,9 +148,7 @@ async function createConnection(
       if (events["messaging-history.set"]) {
         if (account.phoneNumber) {
           await setAccountSyncFlag(account.phoneNumber, true);
-          logger.info(
-            `[${accountId}] 历史同步完成，已标记 ${account.phoneNumber}`,
-          );
+          logger.info(`[${accountId}] 历史同步完成，已标记 ${account.phoneNumber}`);
         }
         await handleMessagingHistory(events, accountId, account.phoneNumber);
       }
@@ -179,17 +158,12 @@ async function createConnection(
         const upsert = events["messages.upsert"];
 
         // 打印完整数据（调试用）
-        logger.info(
-          `[${accountId}] messages.upsert 数据:`,
-          JSON.stringify(upsert, null, 2),
-        );
+        logger.info(`[${accountId}] messages.upsert 数据:`, JSON.stringify(upsert, null, 2));
 
         if (upsert.type === "notify" || upsert.type === "append") {
           sock.lastActiveTime = new Date();
           for (const msg of upsert.messages || []) {
-            const text =
-              msg.message?.conversation ||
-              msg.message?.extendedTextMessage?.text;
+            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
 
             // 特殊命令处理
             if (text === "requestPlaceholder" && !upsert.requestId) {
@@ -201,71 +175,42 @@ async function createConnection(
               continue;
             }
 
-            await handleIncomingMessage(
-              sock,
-              msg,
-              accountId,
-              account.phoneNumber,
-            );
+            await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }
       }
 
       // 6. 消息状态更新（已读/送达）
       if (events["messages.update"]) {
-        await handleMessageStatusUpdate(
-          events["messages.update"],
-          accountId,
-          account.phoneNumber,
-        );
+        await handleMessageStatusUpdate(events["messages.update"], accountId, account.phoneNumber);
       }
 
       // 7. 消息回执
       if (events["message-receipt.update"]) {
-        await handleMessageReceiptUpdate(
-          events["message-receipt.update"],
-          accountId,
-          account.phoneNumber,
-        );
+        await handleMessageReceiptUpdate(events["message-receipt.update"], accountId, account.phoneNumber);
       }
 
       // 8. 新群组
       if (events["groups.upsert"]) {
-        logger.info(
-          `[${accountId}] groups.upsert 数据:`,
-          JSON.stringify(events["groups.upsert"], null, 2),
-        );
+        logger.info(`[${accountId}] groups.upsert 数据:`, JSON.stringify(events["groups.upsert"], null, 2));
         // TODO: 保存群组信息到 Redis
       }
 
       // 9. 新聊天会话
       if (events["chats.upsert"]) {
-        logger.info(
-          `[${accountId}] chats.upsert 数据:`,
-          JSON.stringify(events["chats.upsert"], null, 2),
-        );
-        await handleChatsUpsert(
-          events["chats.upsert"],
-          accountId,
-          account.phoneNumber,
-        );
+        logger.info(`[${accountId}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
+        await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
 
       // 10. 群组信息更新
       if (events["groups.update"]) {
-        logger.info(
-          `[${accountId}] groups.update 事件:`,
-          JSON.stringify(events["groups.update"], null, 2),
-        );
+        logger.info(`[${accountId}] groups.update 事件:`, JSON.stringify(events["groups.update"], null, 2));
         // TODO: 更新群组缓存
       }
 
       // 11. 群组成员更新
       if (events["group-participants.update"]) {
-        logger.info(
-          `[${accountId}] group-participants.update 事件:`,
-          JSON.stringify(events["group-participants.update"], null, 2),
-        );
+        logger.info(`[${accountId}] group-participants.update 事件:`, JSON.stringify(events["group-participants.update"], null, 2));
         // TODO: 更新群组成员缓存
       }
     });
@@ -274,12 +219,7 @@ async function createConnection(
     const timeoutId = setTimeout(() => {
       baileysLogger.error(`[${accountId}] 登录超时`);
       sock.account_status = LOGIN_STATUS.FAILED;
-      updateAccountStatus(
-        accountId,
-        account.phoneNumber,
-        LOGIN_STATUS.FAILED,
-        "disconnected",
-      );
+      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
       if (rejectFunc && typeof rejectFunc === "function") {
         rejectFunc(new Error("登录超时"));
       }
@@ -294,11 +234,7 @@ async function createConnection(
   }
 }
 
-async function getConnection(
-  identifier,
-  callback = null,
-  proxyOverride = null,
-) {
+async function getConnection(identifier, callback = null, proxyOverride = null) {
   // 1. 检查内存连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
@@ -356,8 +292,7 @@ async function CloseConnection(idOrPhone) {
   if (connections.has(idOrPhone)) return await closeConnection(idOrPhone);
   const accountService = require("../account");
   const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
-  if (account && connections.has(account.id))
-    return await closeConnection(account.id);
+  if (account && connections.has(account.id)) return await closeConnection(account.id);
   logger.warn(`[${idOrPhone}] 未找到对应的活动连接`);
   return false;
 }

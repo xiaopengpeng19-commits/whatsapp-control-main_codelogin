@@ -2,17 +2,8 @@
 const snowflake = require("../utils/snowflake");
 const { auth } = require("../utils/logger");
 const logger = auth;
-const {
-  getConnection,
-  createConnection,
-  GetAccountStateFromConnection,
-  CloseConnection,
-} = require("./baileys/connect");
-const {
-  formatPhoneNumber,
-  isValidPhoneNumber,
-  smartFormatPhoneNumber,
-} = require("../utils/phoneFormatter");
+const { getConnection, createConnection, GetAccountStateFromConnection, CloseConnection } = require("./baileys/connect");
+const { formatPhoneNumber, isValidPhoneNumber, smartFormatPhoneNumber } = require("../utils/phoneFormatter");
 const redisStorage = require("./redisStorage");
 const path = require("path");
 const fs = require("fs");
@@ -45,9 +36,7 @@ class AccountService {
         sessionId: sessionId || null,
       };
 
-      logger.info(
-        `create whatsapp connection for phone number: ${formattedPhone}`,
-      );
+      logger.info(`create whatsapp connection for phone number: ${formattedPhone}`);
 
       let callbackfun = null;
       callbackfun = async () => {
@@ -82,8 +71,7 @@ class AccountService {
             accountId: account.id,
             phoneNumber: formattedPhone,
             pairingCode: result.qr,
-            message:
-              "pairing code generated, please input this code in your app",
+            message: "pairing code generated, please input this code in your app",
           },
         };
       }
@@ -336,9 +324,7 @@ class AccountService {
       banned: 5,
     };
     try {
-      const sockstatus = await GetAccountStateFromConnection(
-        account.phoneNumber,
-      );
+      const sockstatus = await GetAccountStateFromConnection(account.phoneNumber);
       if (sockstatus) {
         logger.info("sockstatus:", sockstatus);
         return statusmap[sockstatus.account_status] || 1;
@@ -423,8 +409,7 @@ class AccountService {
     logger.warn(`[AddContacts] 功能已禁用: ${JSON.stringify(body)}`);
     return {
       code: 400,
-      message:
-        "添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
+      message: "添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
       data: null,
     };
   }
@@ -434,8 +419,7 @@ class AccountService {
     logger.warn(`[AddContactsBatch] 功能已禁用: ${JSON.stringify(body)}`);
     return {
       code: 400,
-      message:
-        "批量添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
+      message: "批量添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
       data: null,
     };
   }
@@ -584,8 +568,7 @@ class AccountService {
       }
 
       // 手机号：优先用 body.phoneNumber，其次用 accountId，最后从 creds 提取
-      const finalPhone =
-        phoneNumber || accountId || creds.Phone || creds.me?.id?.split(":")[0];
+      const finalPhone = phoneNumber || accountId || creds.Phone || creds.me?.id?.split(":")[0];
       if (!finalPhone) {
         return { code: 400, message: "phoneNumber is required", data: null };
       }
@@ -600,10 +583,7 @@ class AccountService {
       }
 
       // 3. 保存 creds 到文件系统
-      const sessionDir = path.join(
-        process.env.STORAGE_PATH || "./storage/sessions",
-        finalPhone,
-      );
+      const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", finalPhone);
       if (!fs.existsSync(sessionDir)) {
         fs.mkdirSync(sessionDir, { recursive: true });
       }

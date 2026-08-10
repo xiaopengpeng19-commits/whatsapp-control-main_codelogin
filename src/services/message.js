@@ -1,11 +1,12 @@
 // message.js - 修改所有方法返回统一格式
 const redisStorage = require("../services/redisStorage");
-const { getConnection } = require("./baileys/connect");  // 移除 markChatAsRead
-const { msg } = require('../utils/logger'); const logger = msg;
+const { getConnection } = require("./baileys/connect"); // 移除 markChatAsRead
+const { msg } = require("../utils/logger");
+const logger = msg;
 
 const { Buffer } = require("node:buffer");
 const { delay } = require("../utils/common");
-const { sendButtons } = require('malvin-btns');
+const { sendButtons } = require("malvin-btns");
 
 function normalizeJid(jid) {
   if (!jid) return jid;
@@ -17,11 +18,7 @@ class MessageService {
    * Delete a message
    */
   async deleteMessage(sock, jid, msgId) {
-    let response = await sock.chatModify(
-      { clear: { messages: [{ id: msgId, fromMe: true }] } },
-      jid,
-      []
-    );
+    let response = await sock.chatModify({ clear: { messages: [{ id: msgId, fromMe: true }] } }, jid, []);
     logger.info("response:", response);
     return response;
   }
@@ -65,32 +62,32 @@ class MessageService {
    * Send text message - 统一返回格式
    */
   async SendTextMsg(idorphone, body) {
-      try {
-          const To = body.To || body.to;
-          const Text = body.Text || body.text;
-          const DeleteForMe = body.DeleteForMe || false;
-          
-          const sock = await getConnection(idorphone);
-          if (!sock) {
-              return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
-          }
-          let response = await this.sendMessageWTyping(sock, To, {
-              text: Text,
-              ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
-          });
-          return {
-              code: 200,
-              message: "success",
-              data: {
-                  to: To,
-                  messageId: response.key.id
-              }
-          };
-      } catch (error) {
-          logger.info("SendTextMsg error:", error);
-          const to = body?.To || body?.to || '';
-          return { code: 500, message: error.message, data: { to: to } };
+    try {
+      const To = body.To || body.to;
+      const Text = body.Text || body.text;
+      const DeleteForMe = body.DeleteForMe || false;
+
+      const sock = await getConnection(idorphone);
+      if (!sock) {
+        return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
       }
+      let response = await this.sendMessageWTyping(sock, To, {
+        text: Text,
+        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
+      });
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          to: To,
+          messageId: response.key.id,
+        },
+      };
+    } catch (error) {
+      logger.info("SendTextMsg error:", error);
+      const to = body?.To || body?.to || "";
+      return { code: 500, message: error.message, data: { to: to } };
+    }
   }
 
   /**
@@ -114,8 +111,8 @@ class MessageService {
         message: "success",
         data: {
           to: To,
-          messageId: response.key.id
-        }
+          messageId: response.key.id,
+        },
       };
     } catch (error) {
       return { code: 500, message: error.message, data: { to: To } };
@@ -143,8 +140,8 @@ class MessageService {
         message: "success",
         data: {
           to: To,
-          messageId: response.key.id
-        }
+          messageId: response.key.id,
+        },
       };
     } catch (error) {
       return { code: 500, message: error.message, data: { to: To } };
@@ -192,8 +189,8 @@ class MessageService {
         message: "success",
         data: {
           to: to,
-          messageId: response?.key?.id || null
-        }
+          messageId: response?.key?.id || null,
+        },
       };
     } catch (error) {
       return { code: 500, message: error.message, data: null };
@@ -245,42 +242,42 @@ class MessageService {
 
     let toid = normalizeJid(to);
     try {
-      const formattedButtons = buttons.map(btn => {
+      const formattedButtons = buttons.map((btn) => {
         if (btn.name && btn.buttonParamsJson) {
           return btn;
         }
         if (btn.url) {
           return {
-            name: 'cta_url',
+            name: "cta_url",
             buttonParamsJson: JSON.stringify({
-              display_text: btn.display_text || '访问链接',
-              url: btn.url
-            })
+              display_text: btn.display_text || "访问链接",
+              url: btn.url,
+            }),
           };
         }
         if (btn.phoneNumber) {
           return {
-            name: 'cta_call',
+            name: "cta_call",
             buttonParamsJson: JSON.stringify({
-              display_text: btn.display_text || '拨打电话',
-              phone_number: btn.phoneNumber
-            })
+              display_text: btn.display_text || "拨打电话",
+              phone_number: btn.phoneNumber,
+            }),
           };
         }
         return {
-          name: 'quick_reply',
+          name: "quick_reply",
           buttonParamsJson: JSON.stringify({
-            display_text: btn.display_text || '按钮',
-            id: btn.id || `btn_${Date.now()}`
-          })
+            display_text: btn.display_text || "按钮",
+            id: btn.id || `btn_${Date.now()}`,
+          }),
         };
       });
 
       const buttonParams = {
-        title: title || '',
-        text: body || '',
-        footer: footer || '',
-        buttons: formattedButtons
+        title: title || "",
+        text: body || "",
+        footer: footer || "",
+        buttons: formattedButtons,
       };
 
       if (imageUrl) {
@@ -294,15 +291,15 @@ class MessageService {
         message: "success",
         data: {
           to: to,
-          messageId: response.key.id
-        }
+          messageId: response.key.id,
+        },
       };
     } catch (error) {
       logger.error("SendButtonMessage toid: ", toid, " error: ", error);
       return {
         code: 500,
         message: error.message || String(error),
-        data: { to: toid }
+        data: { to: toid },
       };
     }
   }

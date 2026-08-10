@@ -1,5 +1,5 @@
 // src/services/baileys/index.js
 module.exports = {
-  ...require('./connect'),
-  ...require('./constants'),
+  ...require("./connect"),
+  ...require("./constants"),
 };

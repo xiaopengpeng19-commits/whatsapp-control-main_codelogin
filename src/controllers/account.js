@@ -361,10 +361,7 @@ class AccountController {
       try {
         // No SQL cleanup needed for Redis persistence
       } catch (e) {}
-      const sessionDir = path.join(
-        process.env.STORAGE_PATH || "./storage/sessions",
-        id,
-      );
+      const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", id);
       if (fs.existsSync(sessionDir)) {
         fs.rmSync(sessionDir, { recursive: true, force: true });
       }

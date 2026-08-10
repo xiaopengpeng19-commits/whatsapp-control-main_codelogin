@@ -10,10 +10,10 @@ function formatResponse(success, message, data = null) {
     success,
     message,
     data,
-    timestamp: new Date()
+    timestamp: new Date(),
   };
 }
 
 module.exports = {
-  formatResponse
-}; 
+  formatResponse,
+};

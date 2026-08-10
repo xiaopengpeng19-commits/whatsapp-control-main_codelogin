@@ -1,5 +1,6 @@
-const { validate, schemas } = require('../utils/validators');
-const { getModule } = require('../utils/logger'); const logger = getModule('middleware');
+const { validate, schemas } = require("../utils/validators");
+const { getModule } = require("../utils/logger");
+const logger = getModule("middleware");
 
 /**
  * Generic validation middleware factory
@@ -10,13 +11,13 @@ function validateBody(schemaName) {
   return async (ctx, next) => {
     try {
       const { error, value } = validate(schemaName, ctx.request.body);
-      
+
       if (error) {
         ctx.status = 400;
         ctx.body = {
           success: false,
-          message: 'Validation failed',
-          errors: error.details.map(detail => detail.message)
+          message: "Validation failed",
+          errors: error.details.map((detail) => detail.message),
         };
         return;
       }
@@ -25,23 +26,23 @@ function validateBody(schemaName) {
       ctx.request.body = value;
       await next();
     } catch (err) {
-      logger.error('Validation error:', err);
+      logger.error("Validation error:", err);
       ctx.status = 500;
       ctx.body = {
         success: false,
-        message: 'Validation error occurred',
-        error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        message: "Validation error occurred",
+        error: process.env.NODE_ENV === "development" ? err.message : undefined,
       };
     }
   };
 }
 
 // Specific validation middleware accounts
-const validateAccount = validateBody('createAccount');
-const validateContact = validateBody('contact');
-const validateGroup = validateBody('createGroup');
+const validateAccount = validateBody("createAccount");
+const validateContact = validateBody("contact");
+const validateGroup = validateBody("createGroup");
 const validateMessage = (ctx, next) => {
-  const schemaName =  'sendMessage';
+  const schemaName = "sendMessage";
   return validateBody(schemaName)(ctx, next);
 };
 
@@ -50,5 +51,5 @@ module.exports = {
   validateAccount,
   validateContact,
   validateGroup,
-  validateMessage
-}; 
+  validateMessage,
+};

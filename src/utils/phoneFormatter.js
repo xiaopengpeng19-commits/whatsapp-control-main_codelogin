@@ -11,18 +11,18 @@
  */
 function formatPhoneNumber(phoneNumber) {
   if (!phoneNumber) {
-    throw new Error('手机号码不能为空');
+    throw new Error("手机号码不能为空");
   }
 
   // 移除所有非数字字符
-  let cleanNumber = phoneNumber.replace(/\D/g, '');
-  
+  let cleanNumber = phoneNumber.replace(/\D/g, "");
+
   // 如果号码以1开头且长度为11位，可能是美国号码
   // 如果号码以86开头，可能是中国号码
   // 这里可以根据需要添加更多国家代码的处理逻辑
-  
+
   if (cleanNumber.length === 0) {
-    throw new Error('无效的手机号码格式');
+    throw new Error("无效的手机号码格式");
   }
 
   // 确保号码长度合理（通常在7-15位之间）
@@ -54,14 +54,14 @@ function isValidPhoneNumber(phoneNumber) {
  */
 function smartFormatPhoneNumber(phoneNumber) {
   if (!phoneNumber) {
-    throw new Error('phone number is required');
+    throw new Error("phone number is required");
   }
-  let cleanNumber = phoneNumber.replace(/\D/g, '');
+  let cleanNumber = phoneNumber.replace(/\D/g, "");
   return formatPhoneNumber(cleanNumber);
 }
 
 module.exports = {
   formatPhoneNumber,
   isValidPhoneNumber,
-  smartFormatPhoneNumber
-}; 
+  smartFormatPhoneNumber,
+};

@@ -7,12 +7,7 @@ const redisStorage = require("../redisStorage");
 const { conn } = require("../../utils/logger");
 const logger = conn;
 
-async function updateAccountStatus(
-  accountId,
-  phoneNumber,
-  accountStatus,
-  socketStatus
-) {
+async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
     const accountData = {
       id: accountId,
@@ -57,12 +52,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
     .then((code) => {
       logger.info(`[${accountId}] 配对码生成成功: ${code}`);
 
-      updateAccountStatus(
-        accountId,
-        account.phoneNumber,
-        LOGIN_STATUS.WAITING_PAIR_CODE,
-        "disconnected"
-      );
+      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE, "disconnected");
 
       if (resolveFunc && typeof resolveFunc === "function") {
         resolveFunc({
@@ -78,12 +68,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
     .catch((err) => {
       logger.error(`[${accountId}] 请求配对码失败:`, err);
       sock.account_status = LOGIN_STATUS.FAILED;
-      updateAccountStatus(
-        accountId,
-        account.phoneNumber,
-        LOGIN_STATUS.FAILED,
-        "disconnected"
-      );
+      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
 
       if (rejectFunc && typeof rejectFunc === "function") {
         rejectFunc(err);
@@ -95,12 +80,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
 function handleQRCode(sock, account, qr, ctx) {
   const { accountId, resolveFunc } = ctx;
   logger.info(`[${accountId}] QR码已生成`);
-  updateAccountStatus(
-    accountId,
-    account.phoneNumber,
-    LOGIN_STATUS.WAITING_QR,
-    "disconnected"
-  );
+  updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR, "disconnected");
   if (resolveFunc && typeof resolveFunc === "function") {
     resolveFunc({ status: "waiting_qr", qr, accountId });
   }
@@ -114,17 +94,15 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     return;
   }
 
-  const statusCode = lastDisconnect?.error instanceof Boom
-    ? lastDisconnect.error?.output?.statusCode
-    : null;
+  const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
 
   // 手动关闭
   if (isManualClose) {
     logger.info(`[${accountId}] 手动关闭连接`);
     ctx.connections.delete(accountId);
-    if (rejectFunc && typeof rejectFunc === 'function') {
-      rejectFunc(new Error('手动关闭'));
+    if (rejectFunc && typeof rejectFunc === "function") {
+      rejectFunc(new Error("手动关闭"));
     }
     return;
   }
@@ -133,22 +111,22 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   if (statusCode === 515) {
     ctx._resolved = true;
     logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
-    const { createConnection } = require('./connect');
+    const { createConnection } = require("./connect");
     createConnection(account, onConnected, true)
       .then((result) => {
-        if (result?.status === 'connected') {
+        if (result?.status === "connected") {
           ctx.connections.set(accountId, result.sock);
-          if (resolveFunc && typeof resolveFunc === 'function') {
+          if (resolveFunc && typeof resolveFunc === "function") {
             resolveFunc(result);
           }
         } else {
-          if (rejectFunc && typeof rejectFunc === 'function') {
-            rejectFunc(new Error('重启连接失败'));
+          if (rejectFunc && typeof rejectFunc === "function") {
+            rejectFunc(new Error("重启连接失败"));
           }
         }
       })
       .catch((err) => {
-        if (rejectFunc && typeof rejectFunc === 'function') {
+        if (rejectFunc && typeof rejectFunc === "function") {
           rejectFunc(err);
         }
       });
@@ -158,17 +136,17 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   // ========== 401/403：凭证失效，彻底清理 ==========
   if (statusCode === 401 || statusCode === 403) {
     logger.warn(`[${accountId}] 凭证已失效 (${statusCode})，彻底清理账号数据`);
-    
+
     // 异步清理，不阻塞
     setImmediate(async () => {
       try {
         // 1. 从 Redis 删除账号
-        const redisStorage = require('../redisStorage');
+        const redisStorage = require("../redisStorage");
         await redisStorage.deleteAccount(accountId);
         logger.info(`[${accountId}] 已从 Redis 删除`);
-        
+
         // 2. 删除 session 目录
-        const sessionDir = path.join(process.env.STORAGE_PATH || './storage/sessions', String(accountId));
+        const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(accountId));
         if (fs.existsSync(sessionDir)) {
           fs.rmSync(sessionDir, { recursive: true, force: true });
           logger.info(`[${accountId}] 已删除会话目录: ${sessionDir}`);
@@ -177,12 +155,12 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
         logger.error(`[${accountId}] 清理账号数据失败:`, error);
       }
     });
-    
+
     // 3. 从内存连接池删除
     ctx.connections.delete(accountId);
-    
+
     // 4. 通知上层凭证已失效
-    if (rejectFunc && typeof rejectFunc === 'function') {
+    if (rejectFunc && typeof rejectFunc === "function") {
       rejectFunc(new Error(`凭证已失效，请重新登录 (${statusCode})`));
     }
     return;
@@ -190,13 +168,11 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // ========== 其他错误 ==========
   const status = LOGIN_STATUS.EXPIRED;
-  updateAccountStatus(accountId, account.phoneNumber, status, 'disconnected');
+  updateAccountStatus(accountId, account.phoneNumber, status, "disconnected");
   ctx.connections.delete(accountId);
 
-  if (rejectFunc && typeof rejectFunc === 'function') {
-    rejectFunc(
-      new Error(`连接关闭: ${lastDisconnect?.error?.message || '未知错误'}`)
-    );
+  if (rejectFunc && typeof rejectFunc === "function") {
+    rejectFunc(new Error(`连接关闭: ${lastDisconnect?.error?.message || "未知错误"}`));
   }
 }
 
@@ -222,20 +198,13 @@ function handleConnectionOpen(sock, account, ctx) {
   sock.account_status = LOGIN_STATUS.CONNECTED;
   sock.lastActiveTime = new Date();
 
-  updateAccountStatus(
-    accountId,
-    phoneNumber,
-    LOGIN_STATUS.CONNECTED,
-    "connected"
-  );
+  updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED, "connected");
   connections.set(accountId, sock);
 
   logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
 
   if (onConnected) {
-    onConnected(sock).catch((err) =>
-      logger.error(`[${accountId}] 回调执行失败:`, err)
-    );
+    onConnected(sock).catch((err) => logger.error(`[${accountId}] 回调执行失败:`, err));
   }
 
   if (resolveFunc && typeof resolveFunc === "function") {

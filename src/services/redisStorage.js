@@ -1,10 +1,11 @@
-const { getClient } = require('../config/redis');
-const nats = require('../config/nats');
-const { redis } = require('../utils/logger'); const logger = redis;
-const ACCOUNT_SET = 'accounts:set';
+const { getClient } = require("../config/redis");
+const nats = require("../config/nats");
+const { redis } = require("../utils/logger");
+const logger = redis;
+const ACCOUNT_SET = "accounts:set";
 
 function redisKey(...parts) {
-  return parts.map(part => encodeURIComponent(String(part))).join(':');
+  return parts.map((part) => encodeURIComponent(String(part))).join(":");
 }
 
 function parseValue(value) {
@@ -12,10 +13,10 @@ function parseValue(value) {
     return null;
   }
 
-  if (value === 'true') {
+  if (value === "true") {
     return true;
   }
-  if (value === 'false') {
+  if (value === "false") {
     return false;
   }
   if (/^-?\d+$/.test(value)) {
@@ -45,9 +46,9 @@ function flattenObject(object) {
   const flat = {};
   for (const [key, value] of Object.entries(object)) {
     if (value === undefined || value === null) continue;
-    if (key === 'phoneNumber' && value !== undefined) {
-      flat[key] = String(value);  // ← 强制转为字符串
-    } else if (typeof value === 'object') {
+    if (key === "phoneNumber" && value !== undefined) {
+      flat[key] = String(value); // ← 强制转为字符串
+    } else if (typeof value === "object") {
       flat[key] = JSON.stringify(value);
     } else {
       flat[key] = String(value);
@@ -57,35 +58,35 @@ function flattenObject(object) {
 }
 
 function getAccountKey(accountId) {
-  return redisKey('account', 'id', accountId);
+  return redisKey("account", "id", accountId);
 }
 
 function getAccountPhoneKey(phoneNumber) {
-  return redisKey('account', 'phone', phoneNumber);
+  return redisKey("account", "phone", phoneNumber);
 }
 
 function getAccountChatsSetKey(accountId) {
-  return redisKey('account', accountId, 'chats');
+  return redisKey("account", accountId, "chats");
 }
 
 function getChatKey(accountId, peerId) {
-  return redisKey('chat', accountId, peerId);
+  return redisKey("chat", accountId, peerId);
 }
 
 function getGroupKey(accountId, groupId) {
-  return redisKey('group', accountId, groupId);
+  return redisKey("group", accountId, groupId);
 }
 
 function getAccountGroupsSetKey(accountId) {
-  return redisKey('account', accountId, 'groups');
+  return redisKey("account", accountId, "groups");
 }
 
 function getMessageKey(messageId) {
-  return redisKey('message', messageId);
+  return redisKey("message", messageId);
 }
 
 function getChatMessagesKey(chatId) {
-  return redisKey('chat', chatId, 'messages');
+  return redisKey("chat", chatId, "messages");
 }
 
 async function getAccountById(accountId) {
@@ -123,11 +124,11 @@ async function getAllAccounts() {
     ids.map(async (id) => {
       const data = await client.hGetAll(getAccountKey(id));
       return parseObject(data);
-    })
+    }),
   );
 
   // ========== 过滤：只返回有 phoneNumber 的账号 ==========
-  return accounts.filter(acc => acc && acc.phoneNumber);
+  return accounts.filter((acc) => acc && acc.phoneNumber);
 }
 
 // src/services/redisStorage.js
@@ -136,7 +137,7 @@ async function upsertAccount(account) {
   const client = getClient();
   const accountId = String(account.id);
   const accountKey = getAccountKey(accountId);
-  
+
   // ========== 如果没有 phoneNumber，不保存（或只保存不加入列表） ==========
   if (!account.phoneNumber) {
     // 直接保存但不加入 accounts:set（这样 getAllAccounts 不会返回它）
@@ -144,12 +145,12 @@ async function upsertAccount(account) {
     const updated = {
       ...account,
       updatedAt: now,
-      createdAt: now
+      createdAt: now,
     };
     await client.hSet(accountKey, flattenObject(updated));
     return updated;
   }
-  
+
   // ========== 按 phoneNumber 去重：删除旧的同号码账号 ==========
   const existingPhoneAccountId = await client.get(getAccountPhoneKey(account.phoneNumber));
   if (existingPhoneAccountId && existingPhoneAccountId !== accountId) {
@@ -162,7 +163,7 @@ async function upsertAccount(account) {
       logger.info(`[upsertAccount] 删除重复账号: ${existingPhoneAccountId} (phone: ${account.phoneNumber})`);
     }
   }
-  
+
   // ========== 正常保存 ==========
   const existingData = await client.hGetAll(accountKey);
   const existingAccount = parseObject(existingData) || {};
@@ -184,7 +185,7 @@ async function upsertAccount(account) {
     ...existingAccount,
     ...account,
     updatedAt: now,
-    createdAt: existingAccount.createdAt || now
+    createdAt: existingAccount.createdAt || now,
   };
 
   await client.hSet(accountKey, flattenObject(updated));
@@ -196,11 +197,11 @@ async function upsertAccount(account) {
       accountPhone: String(account.phoneNumber),
       socketStatus: account.socket_status,
       updatedAt: now,
-      accountStatus: account.account_status
+      accountStatus: account.account_status,
     };
     await nats.publishMessage(`connection`, connectionData);
   }
-  
+
   return updated;
 }
 
@@ -219,11 +220,10 @@ async function updateAccount(accountId, fields) {
   const updated = {
     ...existing,
     ...fields,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 
   await client.hSet(getAccountKey(accountId), flattenObject(updated));
-
 
   // ========== 添加 NATS 通信（参考 upsertAccount） ==========
   if (updated.phoneNumber) {
@@ -232,14 +232,14 @@ async function updateAccount(accountId, fields) {
       accountPhone: String(updated.phoneNumber),
       socketStatus: updated.socket_status,
       updatedAt: updated.updatedAt,
-      accountStatus: updated.account_status
+      accountStatus: updated.account_status,
     };
-    
+
     try {
       await nats.publishMessage(`connection`, connectionData);
     } catch (natsError) {
       // NATS 发送失败不影响主流程
-      logger.error('NATS publish failed in updateAccount:', natsError);
+      logger.error("NATS publish failed in updateAccount:", natsError);
     }
   }
 
@@ -260,7 +260,7 @@ async function deleteAccount(accountId) {
   // ========== 确保 accountId 是字符串 ==========
   const id = String(accountId);
   await client.sRem(ACCOUNT_SET, id);
-  
+
   await deleteChatsByAccountId(id);
   await deleteGroupsByAccountId(id);
   await client.del(getAccountKey(id));
@@ -273,11 +273,11 @@ async function upsertChat(chat) {
   const client = getClient();
 
   // ========== 过滤官方账号/无效账号 ==========
-  const peerPhone = chat.peerPhone || '';
-  const peerId = chat.peerId || '';
+  const peerPhone = chat.peerPhone || "";
+  const peerId = chat.peerId || "";
 
   // 手机号为 0 或空 → 跳过
-  if (String(peerPhone) === '0' || String(peerPhone) === '') {
+  if (String(peerPhone) === "0" || String(peerPhone) === "") {
     logger.debug(`跳过无效账号: peerPhone=${peerPhone}, peerId=${peerId}`);
     return null;
   }
@@ -294,7 +294,7 @@ async function upsertChat(chat) {
     ...existingChat,
     ...chat,
     updatedAt: now,
-    createdAt: existingChat.createdAt || now
+    createdAt: existingChat.createdAt || now,
   };
 
   await client.hSet(chatKey, flattenObject(updatedChat));
@@ -312,7 +312,7 @@ async function getChatsByAccountId(accountId) {
     peerIds.map(async (peerId) => {
       const data = await client.hGetAll(getChatKey(accountId, peerId));
       return parseObject(data);
-    })
+    }),
   );
   return chats.filter(Boolean);
 }
@@ -326,14 +326,14 @@ async function deleteChatsByAccountId(accountId) {
   }
 
   const pipeline = client.multi();
-  peerIds.forEach(peerId => pipeline.del(getChatKey(accountId, peerId)));
+  peerIds.forEach((peerId) => pipeline.del(getChatKey(accountId, peerId)));
   pipeline.del(getAccountChatsSetKey(accountId));
   await pipeline.exec();
 }
 
 async function getContactsByAccountId(accountId) {
   const chats = await getChatsByAccountId(accountId);
-  return chats.filter(chat => chat.isGroup === false || chat.isGroup === 'false' || chat.isGroup === 0 || chat.isGroup === '0');
+  return chats.filter((chat) => chat.isGroup === false || chat.isGroup === "false" || chat.isGroup === 0 || chat.isGroup === "0");
 }
 
 async function saveGroup(group) {
@@ -351,7 +351,7 @@ async function saveGroup(group) {
     ...existingGroup,
     ...group,
     updatedAt: now,
-    createdAt: existingGroup.createdAt || now
+    createdAt: existingGroup.createdAt || now,
   };
 
   await client.hSet(groupKey, flattenObject(updatedGroup));
@@ -369,7 +369,7 @@ async function getGroupsByAccountId(accountId) {
     groupIds.map(async (groupId) => {
       const data = await client.hGetAll(getGroupKey(accountId, groupId));
       return parseObject(data);
-    })
+    }),
   );
   return groups.filter(Boolean);
 }
@@ -383,7 +383,7 @@ async function deleteGroupsByAccountId(accountId) {
   }
 
   const pipeline = client.multi();
-  groupIds.forEach(groupId => pipeline.del(getGroupKey(accountId, groupId)));
+  groupIds.forEach((groupId) => pipeline.del(getGroupKey(accountId, groupId)));
   pipeline.del(getAccountGroupsSetKey(accountId));
   await pipeline.exec();
 }
@@ -415,7 +415,7 @@ async function saveMessage(message) {
     mediaInfo: message.mediaInfo ? JSON.stringify(message.mediaInfo) : null,
     createdAt: now,
     updatedAt: now,
-    chatId: message.remoteJid
+    chatId: message.remoteJid,
   };
 
   await client.hSet(messageKey, flattenObject(payload));
@@ -441,7 +441,7 @@ async function getMessagesByChat(chatId, limit = 50, offset = 0) {
     messageIds.map(async (messageId) => {
       const messageData = await client.hGetAll(getMessageKey(messageId));
       return parseObject(messageData);
-    })
+    }),
   );
   return messages.filter(Boolean);
 }
@@ -451,7 +451,7 @@ async function updateMessageStatus(messageId, status) {
   const messageKey = getMessageKey(messageId);
   const exists = await client.exists(messageKey);
   if (!exists) {
-    throw new Error('Message not found');
+    throw new Error("Message not found");
   }
   await client.hSet(messageKey, flattenObject({ status, updatedAt: new Date().toISOString() }));
   return parseObject(await client.hGetAll(messageKey));
@@ -466,7 +466,7 @@ async function getAccountSyncFlag(phoneNumber) {
   if (!phoneNumber) return false;
   const client = getClient();
   const value = await client.get(getAccountSyncKey(phoneNumber));
-  return value === 'true';
+  return value === "true";
 }
 
 async function setAccountSyncFlag(phoneNumber, synced = true) {

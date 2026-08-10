@@ -1,25 +1,25 @@
 // src/utils/logger.js
-const pino = require('pino');
+const pino = require("pino");
 
 // ========== 敏感信息脱敏 ==========
 function sanitize(obj) {
-  if (typeof obj === 'string') {
-    let result = obj.replace(/(socks5|http|https):\/\/([^:]+):([^@]+)@/g, '$1://***:***@');
-    result = result.replace(/\b(\d{7,})\b/g, '***');
+  if (typeof obj === "string") {
+    let result = obj.replace(/(socks5|http|https):\/\/([^:]+):([^@]+)@/g, "$1://***:***@");
+    result = result.replace(/\b(\d{7,})\b/g, "***");
     result = result.replace(/(pass|password|secret|key|token)=["']?([^"'\s]+)/gi, '$1="***"');
     return result;
   }
-  if (typeof obj === 'object' && obj !== null) {
+  if (typeof obj === "object" && obj !== null) {
     const sanitized = Array.isArray(obj) ? [] : {};
-    const sensitiveKeys = ['password', 'pass', 'secret', 'token', 'credential', 'apiKey'];
+    const sensitiveKeys = ["password", "pass", "secret", "token", "credential", "apiKey"];
     for (const [key, value] of Object.entries(obj)) {
       if (sensitiveKeys.includes(key.toLowerCase())) {
-        sanitized[key] = '***';
-      } else if (key === 'proxy' && typeof value === 'string') {
-        sanitized[key] = value.replace(/(:\/\/)([^:]+):([^@]+)@/, '$1***:***@');
-      } else if (key === 'phoneNumber' && typeof value === 'string') {
-        sanitized[key] = value.replace(/(\d{7,})/, '***');
-      } else if (typeof value === 'object' && value !== null) {
+        sanitized[key] = "***";
+      } else if (key === "proxy" && typeof value === "string") {
+        sanitized[key] = value.replace(/(:\/\/)([^:]+):([^@]+)@/, "$1***:***@");
+      } else if (key === "phoneNumber" && typeof value === "string") {
+        sanitized[key] = value.replace(/(\d{7,})/, "***");
+      } else if (typeof value === "object" && value !== null) {
         sanitized[key] = sanitize(value);
       } else {
         sanitized[key] = value;
@@ -31,7 +31,7 @@ function sanitize(obj) {
 }
 
 // ========== 日志级别 ==========
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 
 // ========== 基础配置 ==========
 const baseLogger = pino({
@@ -40,15 +40,15 @@ const baseLogger = pino({
   transport: {
     targets: [
       {
-        target: 'pino-pretty',
+        target: "pino-pretty",
         options: {
           colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
-          messageFormat: '[{module}] {msg}',
-          destination: './app.log',  // 写入文件
+          translateTime: "SYS:standard",
+          ignore: "pid,hostname",
+          messageFormat: "[{module}] {msg}",
+          destination: "./app.log", // 写入文件
         },
-        level: 'info',
+        level: "info",
       },
     ],
   },
@@ -94,14 +94,17 @@ function createModuleLogger(moduleName) {
           name: err.name,
         };
       } else if (err) {
-        errorInfo = typeof err === 'string' ? { message: err } : err;
+        errorInfo = typeof err === "string" ? { message: err } : err;
       }
       const sanitized = data ? sanitize(data) : undefined;
-      child.error({
-        ...context,
-        ...(errorInfo ? { error: errorInfo } : {}),
-        ...(sanitized ? { data: sanitized } : {}),
-      }, msg);
+      child.error(
+        {
+          ...context,
+          ...(errorInfo ? { error: errorInfo } : {}),
+          ...(sanitized ? { data: sanitized } : {}),
+        },
+        msg,
+      );
     },
     getContext: () => ({ ...context }),
   };
@@ -109,13 +112,15 @@ function createModuleLogger(moduleName) {
 
 // ========== 导出模块日志实例 ==========
 module.exports = {
-  conn: createModuleLogger('conn'),   // 连接管理
-  nats: createModuleLogger('nats'),   // NATS
-  redis: createModuleLogger('redis'), // Redis
-  msg: createModuleLogger('msg'),     // 消息处理
-  auth: createModuleLogger('auth'),   // 认证登录
-  
+  conn: createModuleLogger("conn"), // 连接管理
+  nats: createModuleLogger("nats"), // NATS
+  redis: createModuleLogger("redis"), // Redis
+  msg: createModuleLogger("msg"), // 消息处理
+  auth: createModuleLogger("auth"), // 认证登录
+
   getModule: createModuleLogger,
-  setLevel: (level) => { baseLogger.level = level; },
+  setLevel: (level) => {
+    baseLogger.level = level;
+  },
   getLevel: () => baseLogger.level,
 };

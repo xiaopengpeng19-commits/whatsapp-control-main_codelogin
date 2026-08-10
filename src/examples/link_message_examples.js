@@ -1,5 +1,5 @@
-const MessageService = require('../services/message');
-const logger = require('../utils/logger');
+const MessageService = require("../services/message");
+const logger = require("../utils/logger");
 // 示例：如何使用不同的链接消息发送方式
 
 // 方式1: 模板消息 - 适合正式商务场景
@@ -15,19 +15,19 @@ async function exampleTemplateMessage() {
         index: 1,
         urlButton: {
           displayText: "查看产品",
-          url: "https://example.com/product"
-        }
+          url: "https://example.com/product",
+        },
       },
       {
         index: 2,
         callButton: {
           displayText: "联系我们",
-          phoneNumber: "+1234567890"
-        }
-      }
-    ]
+          phoneNumber: "+1234567890",
+        },
+      },
+    ],
   };
-  
+
   const result = await MessageService.SendLinkMessageTemplate("account_id", data);
   logger.info("模板消息发送结果:", result);
 }
@@ -39,9 +39,9 @@ async function exampleListMessage() {
     Title: "服务选择",
     Description: "请选择您需要的服务类型",
     ButtonText: "选择服务",
-    LinkUrl: "https://example.com/services"
+    LinkUrl: "https://example.com/services",
   };
-  
+
   const result = await MessageService.SendLinkMessageList("account_id", data);
   logger.info("列表消息发送结果:", result);
 }
@@ -59,26 +59,26 @@ async function exampleInteractiveMessage() {
         type: 1,
         reply: {
           id: "join_event",
-          title: "参加活动"
-        }
+          title: "参加活动",
+        },
       },
       {
         type: 1,
         reply: {
           id: "share_event",
-          title: "分享活动"
-        }
+          title: "分享活动",
+        },
       },
       {
         type: 1,
         reply: {
           id: "get_info",
-          title: "获取详情"
-        }
-      }
-    ]
+          title: "获取详情",
+        },
+      },
+    ],
   };
-  
+
   const result = await MessageService.SendLinkMessageInteractive("account_id", data);
   logger.info("交互式消息发送结果:", result);
 }
@@ -91,9 +91,9 @@ async function exampleCardMessage() {
     Body: "我们刚刚发布了全新的产品系列，具有更好的性能和更优惠的价格。",
     ImageUrl: "https://example.com/product-image.jpg",
     LinkUrl: "https://example.com/new-product",
-    ButtonText: "立即购买"
+    ButtonText: "立即购买",
   };
-  
+
   const result = await MessageService.SendLinkMessageCard("account_id", data);
   logger.info("卡片式消息发送结果:", result);
 }
@@ -104,9 +104,9 @@ async function exampleSimpleMessage() {
     To: "1234567890",
     Title: "重要通知",
     Description: "请查看最新的公司公告和重要信息。",
-    LinkUrl: "https://example.com/announcement"
+    LinkUrl: "https://example.com/announcement",
   };
-  
+
   const result = await MessageService.SendLinkMessageSimple("account_id", data);
   logger.info("简单文本消息发送结果:", result);
 }
@@ -118,9 +118,9 @@ async function exampleDocumentMessage() {
     Title: "技术文档",
     Description: "这是我们最新的技术文档，包含了详细的使用说明。",
     LinkUrl: "https://example.com/docs",
-    DocumentUrl: "https://example.com/technical-doc.pdf"
+    DocumentUrl: "https://example.com/technical-doc.pdf",
   };
-  
+
   const result = await MessageService.SendLinkMessageDocument("account_id", data);
   logger.info("文档消息发送结果:", result);
 }
@@ -128,26 +128,25 @@ async function exampleDocumentMessage() {
 // 使用示例
 async function runExamples() {
   logger.info("=== WhatsApp 链接消息发送示例 ===\n");
-  
+
   try {
     logger.info("1. 发送模板消息...");
     await exampleTemplateMessage();
-    
+
     logger.info("\n2. 发送列表消息...");
     await exampleListMessage();
-    
+
     logger.info("\n3. 发送交互式消息...");
     await exampleInteractiveMessage();
-    
+
     logger.info("\n4. 发送卡片式消息...");
     await exampleCardMessage();
-    
+
     logger.info("\n5. 发送简单文本消息...");
     await exampleSimpleMessage();
-    
+
     logger.info("\n6. 发送文档消息...");
     await exampleDocumentMessage();
-    
   } catch (error) {
     logger.error("示例执行出错:", error);
   }
@@ -161,10 +160,10 @@ module.exports = {
   exampleCardMessage,
   exampleSimpleMessage,
   exampleDocumentMessage,
-  runExamples
+  runExamples,
 };
 
 // 如果直接运行此文件，则执行示例
 if (require.main === module) {
   runExamples();
-} 
+}

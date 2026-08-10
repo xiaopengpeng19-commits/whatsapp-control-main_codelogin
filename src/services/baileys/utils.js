@@ -1,25 +1,25 @@
 // src/services/baileys/utils.js
-const fs = require('fs');
-const path = require('path');
-const P = require('pino');
-const { SocksProxyAgent } = require('socks-proxy-agent');
-const { getContentType } = require('@whiskeysockets/baileys');
+const fs = require("fs");
+const path = require("path");
+const P = require("pino");
+const { SocksProxyAgent } = require("socks-proxy-agent");
+const { getContentType } = require("@whiskeysockets/baileys");
 
 function isJidNewsletter(jid) {
-  return jid && jid.includes('@newsletter');
+  return jid && jid.includes("@newsletter");
 }
 
 function extractMessageContent(message) {
-  if (!message) return '';
+  if (!message) return "";
   const type = getContentType(message);
   const msg = message[type];
-  if (!msg) return '';
-  if (typeof msg === 'string') return msg;
-  return msg.caption || msg.text || msg.conversation || msg.displayName || msg.name || msg.title || '';
+  if (!msg) return "";
+  if (typeof msg === "string") return msg;
+  return msg.caption || msg.text || msg.conversation || msg.displayName || msg.name || msg.title || "";
 }
 
 function getSessionDir(accountId) {
-  const dir = path.join('./storage/sessions', String(accountId));
+  const dir = path.join("./storage/sessions", String(accountId));
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -35,15 +35,15 @@ function createProxyAgent(proxy) {
 
 function createBaileysLogger() {
   const logger = P({
-    level: process.env.BAILEYS_LOG_LEVEL || 'trace',
+    level: process.env.BAILEYS_LOG_LEVEL || "trace",
     transport: {
       targets: [
         {
-          target: 'pino-pretty',
-          options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
-          level: 'warn',
+          target: "pino-pretty",
+          options: { colorize: true, translateTime: "SYS:standard", ignore: "pid,hostname" },
+          level: "warn",
         },
-        { target: 'pino/file', options: { destination: './wa-logs.txt' }, level: 'warn' },
+        { target: "pino/file", options: { destination: "./wa-logs.txt" }, level: "warn" },
       ],
     },
   });
