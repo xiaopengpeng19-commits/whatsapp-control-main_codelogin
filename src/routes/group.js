@@ -6,7 +6,7 @@ const router = new Router();
 
 // router.get('/', groupController.getAllGroups);
 
-router.post('/', groupController.CreateGroup);
+router.post('/', groupController.createGroup);
 router.post('/leaveGroup', groupController.leaveGroup);
 router.post('/getInviteCode', groupController.getInviteCode);
 router.post('/joinGroup', groupController.joinGroup);
