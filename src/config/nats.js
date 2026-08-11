@@ -80,6 +80,7 @@ async function cmdpoll() {
     LeaveGroup: (Account, Body) => groupService.LeaveGroup.call(groupService, Account, Body),
     GetGroupInviteCode: (Account, Body) => groupService.GetGroupInviteCode.call(groupService, Account, Body),
     JoinGroupByInvite: (Account, Body) => groupService.JoinGroupByInvite.call(groupService, Account, Body),
+    SetGroupAnnounce: (Account, Body) => groupService.SetGroupAnnounce.call(groupService, Account, Body || {}),
   };
 
   logger.info("cmdssubscribe");

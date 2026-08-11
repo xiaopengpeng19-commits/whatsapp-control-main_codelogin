@@ -694,6 +694,76 @@ class GroupService {
       return { code: 500, message: error.message || "操作失败", data: null };
     }
   }
+  // src/services/group.js
+
+  /**
+   * 设置群组全员禁言（仅管理员可发言）
+   * @param {string} accountId - 账号ID
+   * @param {Object} body - { groupId: "xxx@g.us", announce: true/false }
+   * @returns {Promise<Object>} 操作结果
+   */
+  async SetGroupAnnounce(accountId, body) {
+    try {
+      const { groupId, announce } = body || {};
+
+      if (!groupId) {
+        return { code: 400, message: "groupId is required", data: null };
+      }
+      if (typeof announce !== "boolean") {
+        return { code: 400, message: "announce must be boolean", data: null };
+      }
+
+      // ========== 获取连接 ==========
+      let sock;
+      try {
+        sock = await getConnection(accountId);
+      } catch (connError) {
+        logger.error(`[SetGroupAnnounce] 获取连接失败:`, connError);
+        return {
+          code: 500,
+          message: `获取连接失败: ${connError.message || "未知错误"}`,
+          data: null,
+        };
+      }
+
+      if (!sock) {
+        return { code: 500, message: "账号不存在或未连接", data: null };
+      }
+
+      // ========== 设置群组模式 ==========
+      // announce: true → 仅管理员发言
+      // announce: false → 所有成员可发言
+      await sock.groupSettingUpdate(groupId, announce ? "announcement" : "not_announcement");
+
+      // ========== 推送到 NATS ==========
+      try {
+        await nats.publishMessage("group.event", {
+          accountId: accountId,
+          eventType: "group.announce.update",
+          data: {
+            groupId: groupId,
+            announce: announce,
+            message: announce ? "已开启全员禁言，仅管理员可发言" : "已关闭全员禁言，所有成员可发言",
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (natsError) {
+        logger.error(`[SetGroupAnnounce] 推送 NATS 失败:`, natsError);
+      }
+
+      return {
+        code: 200,
+        message: announce ? "已开启全员禁言，仅管理员可发言" : "已关闭全员禁言，所有成员可发言",
+        data: {
+          groupId: groupId,
+          announce: announce,
+        },
+      };
+    } catch (error) {
+      logger.error("[SetGroupAnnounce] 失败:", error);
+      return { code: 500, message: error.message || "设置失败", data: null };
+    }
+  }
 }
 
 module.exports = new GroupService();
