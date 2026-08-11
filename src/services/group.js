@@ -465,18 +465,83 @@ class GroupService {
     }
   }
 
+  // src/services/group.js - GetGroupInviteCode 完整版
+
   /**
    * 获取群组邀请链接
+   * @param {string} accountId - 账号ID
+   * @param {Object} body - { groupId: "xxx@g.us" }
+   * @returns {Promise<Object>} 邀请链接
    */
   async GetGroupInviteCode(accountId, body) {
     try {
-      const { groupId } = body;
+      const { groupId } = body || {};
 
       if (!groupId) {
         return { code: 400, message: "groupId is required", data: null };
       }
 
-      const sock = await getConnection(accountId);
+      // ========== 获取连接（带 try-catch） ==========
+      let sock;
+      try {
+        sock = await getConnection(accountId);
+      } catch (connError) {
+        logger.error(`[GetGroupInviteCode] 获取连接失败:`, connError);
+        return {
+          code: 500,
+          message: `获取连接失败: ${connError.message || "未知错误"}`,
+          data: null,
+        };
+      }
+
+      if (!sock) {
+        return { code: 500, message: "账号不存在或未连接", data: null };
+      }
+
+      // ========== 获取邀请码 ==========
+      const inviteCode = await sock.groupInviteCode(groupId);
+
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          groupId: groupId,
+          inviteCode: inviteCode,
+          inviteLink: `https://chat.whatsapp.com/${inviteCode}`,
+        },
+      };
+    } catch (error) {
+      logger.error("[GetGroupInviteCode] 失败:", error);
+      return { code: 500, message: error.message || "获取邀请链接失败", data: null };
+    }
+  }
+
+  // src/services/group.js
+
+  /**
+   * 获取群组邀请链接
+   */
+  async GetGroupInviteCode(accountId, body) {
+    try {
+      const { groupId } = body || {};
+
+      if (!groupId) {
+        return { code: 400, message: "groupId is required", data: null };
+      }
+
+      // ========== 获取连接（带 try-catch） ==========
+      let sock;
+      try {
+        sock = await getConnection(accountId);
+      } catch (connError) {
+        logger.error(`[GetGroupInviteCode] 获取连接失败:`, connError);
+        return {
+          code: 500,
+          message: `获取连接失败: ${connError.message || "未知错误"}`,
+          data: null,
+        };
+      }
+
       if (!sock) {
         return { code: 500, message: "账号不存在或未连接", data: null };
       }
@@ -494,7 +559,7 @@ class GroupService {
       };
     } catch (error) {
       logger.error("[GetGroupInviteCode] 失败:", error);
-      return { code: 500, message: error.message, data: null };
+      return { code: 500, message: error.message || "获取邀请链接失败", data: null };
     }
   }
 
@@ -503,27 +568,44 @@ class GroupService {
    */
   async JoinGroupByInvite(accountId, body) {
     try {
-      const { inviteCode } = body;
+      const { inviteCode } = body || {};
 
       if (!inviteCode) {
         return { code: 400, message: "inviteCode is required", data: null };
       }
 
-      const sock = await getConnection(accountId);
+      // ========== 获取连接（带 try-catch） ==========
+      let sock;
+      try {
+        sock = await getConnection(accountId);
+      } catch (connError) {
+        logger.error(`[JoinGroupByInvite] 获取连接失败:`, connError);
+        return {
+          code: 500,
+          message: `获取连接失败: ${connError.message || "未知错误"}`,
+          data: null,
+        };
+      }
+
       if (!sock) {
         return { code: 500, message: "账号不存在或未连接", data: null };
       }
 
       const result = await sock.groupAcceptInvite(inviteCode);
 
-      await nats.publishMessage("group.event", {
-        accountId: accountId,
-        eventType: "group.joined",
-        data: {
-          groupId: result,
-        },
-        timestamp: new Date().toISOString(),
-      });
+      // ========== 推送到 NATS ==========
+      try {
+        await nats.publishMessage("group.event", {
+          accountId: accountId,
+          eventType: "group.joined",
+          data: {
+            groupId: result,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (natsError) {
+        logger.error(`[JoinGroupByInvite] 推送 NATS 失败:`, natsError);
+      }
 
       return {
         code: 200,
@@ -534,13 +616,14 @@ class GroupService {
       };
     } catch (error) {
       logger.error("[JoinGroupByInvite] 失败:", error);
-      return { code: 500, message: error.message, data: null };
+      return { code: 500, message: error.message || "加入群组失败", data: null };
     }
   }
 
   /**
    * 群成员操作（添加/移除/提拔/降级）
    */
+
   async GroupParticipantsUpdate(accountId, body) {
     try {
       const { groupId, participants, action } = body;
@@ -555,22 +638,46 @@ class GroupService {
         return { code: 400, message: "action must be add/remove/promote/demote", data: null };
       }
 
-      const sock = await getConnection(accountId);
+      // ========== 获取连接（带 try-catch） ==========
+      let sock;
+      try {
+        sock = await getConnection(accountId);
+      } catch (connError) {
+        logger.error(`[GroupParticipantsUpdate] 获取连接失败:`, connError);
+        return {
+          code: 500,
+          message: `获取连接失败: ${connError.message || "未知错误"}`,
+          data: null,
+        };
+      }
+
       if (!sock) {
         return { code: 500, message: "账号不存在或未连接", data: null };
       }
 
-      const result = await sock.groupParticipantsUpdate(groupId, participants, action);
-
-      await nats.publishMessage("group.event", {
-        accountId: accountId,
-        eventType: `group.participants.${action}`,
-        data: {
-          groupId: groupId,
-          participants: participants,
-        },
-        timestamp: new Date().toISOString(),
+      // 格式化参与者 JID（如果传入的是纯数字，加上后缀）
+      const formattedParticipants = participants.map((p) => {
+        if (p.includes("@")) return p;
+        return `${p}@s.whatsapp.net`;
       });
+
+      const result = await sock.groupParticipantsUpdate(groupId, formattedParticipants, action);
+
+      // 推送事件到 NATS
+      try {
+        await nats.publishMessage("group.event", {
+          accountId: accountId,
+          eventType: `group.participants.${action}`,
+          data: {
+            groupId: groupId,
+            participants: formattedParticipants,
+            result: result,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (natsError) {
+        logger.error(`[GroupParticipantsUpdate] 推送 NATS 失败:`, natsError);
+      }
 
       return {
         code: 200,
@@ -578,13 +685,13 @@ class GroupService {
         data: {
           groupId: groupId,
           action: action,
-          participants: participants,
+          participants: formattedParticipants,
           result: result,
         },
       };
     } catch (error) {
       logger.error("[GroupParticipantsUpdate] 失败:", error);
-      return { code: 500, message: error.message, data: null };
+      return { code: 500, message: error.message || "操作失败", data: null };
     }
   }
 }
