@@ -7,8 +7,14 @@ const redisStorage = require("../redisStorage");
 const { conn } = require("../../utils/logger");
 const logger = conn;
 
+// src/services/baileys/connection-handler.js
+
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
+    logger.info(
+      `[updateAccountStatus] 开始更新账号状态: accountId=${accountId}, phoneNumber=${phoneNumber}, accountStatus=${accountStatus}, socketStatus=${socketStatus}`,
+    );
+
     const accountData = {
       id: accountId,
       phoneNumber: phoneNumber || null,
@@ -16,14 +22,21 @@ async function updateAccountStatus(accountId, phoneNumber, accountStatus, socket
       account_status: accountStatus,
       lastActive: new Date().toISOString(),
     };
+
     const existing = await redisStorage.getAccountById(accountId);
+    logger.info(`[updateAccountStatus] 账号是否存在: ${!!existing}`);
+
     if (existing) {
       await redisStorage.updateAccount(accountId, accountData);
+      logger.info(`[updateAccountStatus] 账号已更新: ${accountId}`);
     } else {
       await redisStorage.upsertAccount(accountData);
+      logger.info(`[updateAccountStatus] 账号已创建: ${accountId}`);
     }
+
+    logger.info(`[updateAccountStatus] 更新完成: accountId=${accountId}, accountStatus=${accountStatus}, socketStatus=${socketStatus}`);
   } catch (error) {
-    logger.error(`[${accountId}] 更新账号状态失败:`, error);
+    logger.error(`[updateAccountStatus] 更新账号状态失败: accountId=${accountId}`, error);
   }
 }
 
