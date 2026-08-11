@@ -86,6 +86,8 @@ function handleQRCode(sock, account, qr, ctx) {
   }
 }
 
+// src/services/baileys/connection-handler.js
+
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected } = ctx;
 
@@ -97,7 +99,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
 
-  // 手动关闭
+  // ========== 手动关闭 ==========
   if (isManualClose) {
     logger.info(`[${accountId}] 手动关闭连接`);
     ctx.connections.delete(accountId);
@@ -137,15 +139,12 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   if (statusCode === 401 || statusCode === 403) {
     logger.warn(`[${accountId}] 凭证已失效 (${statusCode})，彻底清理账号数据`);
 
-    // 异步清理，不阻塞
     setImmediate(async () => {
       try {
-        // 1. 从 Redis 删除账号
         const redisStorage = require("../redisStorage");
         await redisStorage.deleteAccount(accountId);
         logger.info(`[${accountId}] 已从 Redis 删除`);
 
-        // 2. 删除 session 目录
         const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(accountId));
         if (fs.existsSync(sessionDir)) {
           fs.rmSync(sessionDir, { recursive: true, force: true });
@@ -156,23 +155,25 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
       }
     });
 
-    // 3. 从内存连接池删除
     ctx.connections.delete(accountId);
-
-    // 4. 通知上层凭证已失效
     if (rejectFunc && typeof rejectFunc === "function") {
       rejectFunc(new Error(`凭证已失效，请重新登录 (${statusCode})`));
     }
     return;
   }
 
-  // ========== 其他错误 ==========
-  const status = LOGIN_STATUS.EXPIRED;
-  updateAccountStatus(accountId, account.phoneNumber, status, "disconnected");
+  // ========== 其他错误（网络超时、代理故障等） ==========
+  // 账号本身是好的，只是连接断了，保持 connected 状态
+  logger.warn(`[${accountId}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
+
+  // 从内存删除连接
   ctx.connections.delete(accountId);
 
+  // ========== 不修改 Redis 状态，保留之前的 socket_status ==========
+  // 让 getConnection 下次调用时自动重连
+
   if (rejectFunc && typeof rejectFunc === "function") {
-    rejectFunc(new Error(`连接关闭: ${lastDisconnect?.error?.message || "未知错误"}`));
+    rejectFunc(new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`));
   }
 }
 
