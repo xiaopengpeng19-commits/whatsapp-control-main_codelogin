@@ -86,8 +86,6 @@ function handleQRCode(sock, account, qr, ctx) {
   }
 }
 
-// src/services/baileys/connection-handler.js
-
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected } = ctx;
 
@@ -104,7 +102,10 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     logger.info(`[${accountId}] 手动关闭连接`);
     ctx.connections.delete(accountId);
     if (rejectFunc && typeof rejectFunc === "function") {
-      rejectFunc(new Error("手动关闭"));
+      const err = new Error("手动关闭");
+      err.code = 200;
+      err.type = "MANUAL_CLOSE";
+      rejectFunc(err);
     }
     return;
   }
@@ -123,12 +124,17 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
           }
         } else {
           if (rejectFunc && typeof rejectFunc === "function") {
-            rejectFunc(new Error("重启连接失败"));
+            const err = new Error("重启连接失败");
+            err.code = 500;
+            err.type = "RESTART_FAILED";
+            rejectFunc(err);
           }
         }
       })
       .catch((err) => {
         if (rejectFunc && typeof rejectFunc === "function") {
+          err.code = err.code || 500;
+          err.type = err.type || "RESTART_ERROR";
           rejectFunc(err);
         }
       });
@@ -157,23 +163,25 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
     ctx.connections.delete(accountId);
     if (rejectFunc && typeof rejectFunc === "function") {
-      rejectFunc(new Error(`凭证已失效，请重新登录 (${statusCode})`));
+      // ========== 使用自定义错误对象 ==========
+      const err = new Error(`凭证已失效，请重新登录 (${statusCode})`);
+      err.code = statusCode; // 401 或 403
+      err.type = "CREDENTIALS_EXPIRED";
+      rejectFunc(err);
     }
     return;
   }
 
   // ========== 其他错误（网络超时、代理故障等） ==========
-  // 账号本身是好的，只是连接断了，保持 connected 状态
   logger.warn(`[${accountId}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
 
-  // 从内存删除连接
   ctx.connections.delete(accountId);
 
-  // ========== 不修改 Redis 状态，保留之前的 socket_status ==========
-  // 让 getConnection 下次调用时自动重连
-
   if (rejectFunc && typeof rejectFunc === "function") {
-    rejectFunc(new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`));
+    const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
+    err.code = statusCode || 500;
+    err.type = "CONNECTION_LOST";
+    rejectFunc(err);
   }
 }
 
