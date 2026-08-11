@@ -267,7 +267,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
     const timeoutId = setTimeout(() => {
       baileysLogger.error(`[${accountId}] 登录超时`);
       sock.account_status = LOGIN_STATUS.FAILED;
-      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
+      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "connected");
       if (rejectFunc && typeof rejectFunc === "function") {
         rejectFunc(new Error("登录超时"));
       }
