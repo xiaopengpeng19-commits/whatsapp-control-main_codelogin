@@ -1,42 +1,52 @@
 // src/utils/logger.js
 const pino = require("pino");
+const fs = require("fs");
+const path = require("path");
 
-// ========== 敏感信息脱敏 ==========
-function sanitize(obj) {
-  if (typeof obj === "string") {
-    let result = obj.replace(/(socks5|http|https):\/\/([^:]+):([^@]+)@/g, "$1://***:***@");
-    result = result.replace(/\b(\d{7,})\b/g, "***");
-    result = result.replace(/(pass|password|secret|key|token)=["']?([^"'\s]+)/gi, '$1="***"');
-    return result;
-  }
-  if (typeof obj === "object" && obj !== null) {
-    const sanitized = Array.isArray(obj) ? [] : {};
-    const sensitiveKeys = ["password", "pass", "secret", "token", "credential", "apiKey"];
-    for (const [key, value] of Object.entries(obj)) {
-      if (sensitiveKeys.includes(key.toLowerCase())) {
-        sanitized[key] = "***";
-      } else if (key === "proxy" && typeof value === "string") {
-        sanitized[key] = value.replace(/(:\/\/)([^:]+):([^@]+)@/, "$1***:***@");
-      } else if (key === "phoneNumber" && typeof value === "string") {
-        sanitized[key] = value.replace(/(\d{7,})/, "***");
-      } else if (typeof value === "object" && value !== null) {
-        sanitized[key] = sanitize(value);
-      } else {
-        sanitized[key] = value;
-      }
-    }
-    return sanitized;
-  }
-  return obj;
+// ========== 日志目录 ==========
+const LOG_DIR = "./logs";
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-// ========== 日志级别 ==========
+// ========== 清理7天前的日志 ==========
+const cleanOldLogs = () => {
+  try {
+    const files = fs.readdirSync(LOG_DIR);
+    const now = Date.now();
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
+    for (const file of files) {
+      if (!file.startsWith("app-") || !file.endsWith(".log")) continue;
+      const filePath = path.join(LOG_DIR, file);
+      const stats = fs.statSync(filePath);
+      if (now - stats.mtimeMs > sevenDays) {
+        fs.unlinkSync(filePath);
+        console.log(`[logger] 已删除过期日志: ${file}`);
+      }
+    }
+  } catch (error) {
+    // 清理失败不影响主流程
+  }
+};
+
+// ========== 生成按日期命名的日志文件 ==========
+const getLogFileName = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return path.join(LOG_DIR, `app-${year}-${month}-${day}.log`);
+};
+
+// ========== 启动时清理旧日志 ==========
+cleanOldLogs();
+
+// ========== 日志配置 ==========
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 
-// ========== 基础配置 ==========
 const baseLogger = pino({
   level: LOG_LEVEL,
-  // 文件日志也格式化
   transport: {
     targets: [
       {
@@ -46,7 +56,8 @@ const baseLogger = pino({
           translateTime: "SYS:standard",
           ignore: "pid,hostname",
           messageFormat: "[{module}] {msg}",
-          destination: "./app.log", // 写入文件
+          destination: getLogFileName(),
+          mkdir: true,
         },
         level: "info",
       },
@@ -73,16 +84,13 @@ function createModuleLogger(moduleName) {
     },
 
     debug: (msg, data) => {
-      const sanitized = data ? sanitize(data) : undefined;
-      child.debug({ ...context, ...(sanitized ? { data: sanitized } : {}) }, msg);
+      child.debug({ ...context, ...(data ? { data } : {}) }, msg);
     },
     info: (msg, data) => {
-      const sanitized = data ? sanitize(data) : undefined;
-      child.info({ ...context, ...(sanitized ? { data: sanitized } : {}) }, msg);
+      child.info({ ...context, ...(data ? { data } : {}) }, msg);
     },
     warn: (msg, data) => {
-      const sanitized = data ? sanitize(data) : undefined;
-      child.warn({ ...context, ...(sanitized ? { data: sanitized } : {}) }, msg);
+      child.warn({ ...context, ...(data ? { data } : {}) }, msg);
     },
     error: (msg, err, data) => {
       let errorInfo = null;
@@ -96,12 +104,11 @@ function createModuleLogger(moduleName) {
       } else if (err) {
         errorInfo = typeof err === "string" ? { message: err } : err;
       }
-      const sanitized = data ? sanitize(data) : undefined;
       child.error(
         {
           ...context,
           ...(errorInfo ? { error: errorInfo } : {}),
-          ...(sanitized ? { data: sanitized } : {}),
+          ...(data ? { data } : {}),
         },
         msg,
       );
@@ -110,14 +117,14 @@ function createModuleLogger(moduleName) {
   };
 }
 
-// ========== 导出模块日志实例 ==========
+// ========== 导出 ==========
 module.exports = {
-  conn: createModuleLogger("conn"), // 连接管理
-  nats: createModuleLogger("nats"), // NATS
-  redis: createModuleLogger("redis"), // Redis
-  msg: createModuleLogger("msg"), // 消息处理
-  auth: createModuleLogger("auth"), // 认证登录
-
+  conn: createModuleLogger("conn"),
+  nats: createModuleLogger("nats"),
+  redis: createModuleLogger("redis"),
+  msg: createModuleLogger("msg"),
+  auth: createModuleLogger("auth"),
+  group: createModuleLogger("group"),
   getModule: createModuleLogger,
   setLevel: (level) => {
     baseLogger.level = level;
