@@ -7,6 +7,7 @@ const {
   makeCacheableSignalKeyStore,
   proto,
 } = require("@whiskeysockets/baileys");
+const path = require("path");
 const { conn } = require("../../utils/logger");
 const redisStorage = require("../redisStorage");
 const nats = require("../../config/nats");
