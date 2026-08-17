@@ -286,45 +286,46 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
 // src/services/baileys/connect.js
 
-async function getConnection(identifier, callback = null, proxyOverride = null) {
-  console.log(`🔍 [${identifier}] 开始获取连接...`);
-  logger.info(`[${identifier}] 开始获取连接...`);
+// src/services/baileys/connect.js
 
+async function getConnection(identifier, callback = null, proxyOverride = null) {
   // 1. 检查内存连接
   if (connections.has(identifier)) {
-    console.log(`🔍 [${identifier}] 内存中有连接`);
     const sock = connections.get(identifier);
     if (sock?.user) return sock;
     connections.delete(identifier);
   }
-  console.log(`🔍 [${identifier}] 内存中没有连接`);
 
   // 2. 从 Redis 获取账号
-  console.log(`🔍 [${identifier}] 从 Redis 获取账号...`);
   const accountService = require("../account");
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
-
   if (!account) {
-    console.log(`❌ [${identifier}] 账号不存在`);
     logger.error(`[${identifier}] 账号不存在`);
     return null;
   }
-  console.log(`✅ [${identifier}] 账号存在: ${account.id}`);
 
-  // 3. 检查凭证文件
-  console.log(`🔍 [${identifier}] 检查凭证文件...`);
+  // 3. 如果传入了 proxyOverride，覆盖 account.proxy
+  if (proxyOverride) {
+    account.proxy = proxyOverride;
+  }
+
+  // 4. 检查内存连接（用 account.id）
+  if (connections.has(account.id)) return connections.get(account.id);
+
+  // 5. 检查凭证文件
   const sessionDir = getSessionDir(account.id);
   const credsPath = path.join(sessionDir, "creds.json");
   if (!fs.existsSync(credsPath)) {
-    console.log(`❌ [${identifier}] 凭证文件不存在`);
-    throw new Error("凭证文件丢失");
+    logger.warn(`[${identifier}] 凭证文件不存在，标记为过期`);
+    await updateAccountStatus(account.id, account.phoneNumber, LOGIN_STATUS.EXPIRED, "disconnected");
+    const err = new Error("凭证文件丢失，请重新登录");
+    err.code = 404;
+    err.type = "CREDENTIALS_MISSING";
+    throw err;
   }
-  console.log(`✅ [${identifier}] 凭证文件存在`);
 
-  // 4. 创建新连接
-  console.log(`🔍 [${identifier}] 创建新连接...`);
+  // 6. 创建新连接
   const result = await createConnection(account, callback);
-  console.log(`✅ [${identifier}] 连接结果: ${result?.status}`);
 
   if (result?.status === "connected") {
     return result.sock;
