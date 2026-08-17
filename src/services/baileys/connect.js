@@ -57,6 +57,8 @@ async function createConnection(account, onConnected = null, usePairCode = false
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
+      reconnect: false, // ✅ 禁用自动重连
+      maxReconnectAttempts: 0, // ✅ 不重试
       agent: proxyAgent,
       fetchAgent: proxyAgent,
       shouldSyncHistoryMessage: () => shouldSync,
