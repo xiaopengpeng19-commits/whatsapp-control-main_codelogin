@@ -8,33 +8,47 @@ let natsConnection = null;
  * Connect to NATS server
  * @returns {Promise<Object>} - NATS connection
  */
+// src/config/nats.js
+
 async function connectNats() {
+  console.log('📡 [nats] connectNats 开始');
+  
   try {
+    console.log('📡 [nats] 连接选项中...');
     // 使用分离的认证参数避免 URL 编码问题
     const connectionOptions = {
       servers: process.env.NATS_HOST || "127.0.0.1:4222",
-      user: process.env.NATS_USER || "root",
-      pass: process.env.NATS_PASS || "16!8#6QNy12sFtq",
+      // user: process.env.NATS_USER || "root",
+      // pass: process.env.NATS_PASS || "16!8#6QNy12sFtq",
       name: "whatsapp-service",
       reconnect: true,
-      maxReconnectAttempts: -1, // infinite reconnects
+      maxReconnectAttempts: -1,
     };
+    console.log('📡 [nats] 连接选项:', connectionOptions);
 
+    console.log('📡 [nats] 正在连接 NATS...');
     natsConnection = await connect(connectionOptions);
+    console.log('📡 [nats] connect() 返回了');
 
     logger.info("Connected to NATS server");
+    console.log('📡 [nats] 连接成功，准备执行 cmdpoll...');
 
     // 等待连接完全建立后再设置订阅
+    console.log('📡 [nats] 调用 cmdpoll...');
     await cmdpoll();
+    console.log('📡 [nats] cmdpoll 完成');
 
     // Setup disconnect handler
     natsConnection.closed().then(() => {
       logger.info("NATS connection closed");
       natsConnection = null;
     });
+    console.log('📡 [nats] disconnect handler 已设置');
 
+    console.log('📡 [nats] connectNats 返回');
     return natsConnection;
   } catch (error) {
+    console.log('📡 [nats] 连接失败:', error.message);
     logger.error("Failed to connect to NATS:", error);
     return null;
   }
