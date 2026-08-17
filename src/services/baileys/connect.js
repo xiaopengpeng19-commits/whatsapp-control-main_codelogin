@@ -7,7 +7,7 @@ const {
   makeCacheableSignalKeyStore,
   proto,
 } = require("@whiskeysockets/baileys");
-const path = require("path");
+
 const { conn } = require("../../utils/logger");
 const redisStorage = require("../redisStorage");
 const nats = require("../../config/nats");
@@ -285,10 +285,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
-// src/services/baileys/connect.js
-
-// src/services/baileys/connect.js
-
 async function getConnection(identifier, callback = null, proxyOverride = null) {
   // 1. 检查内存连接
   if (connections.has(identifier)) {
@@ -313,19 +309,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
   // 4. 检查内存连接（用 account.id）
   if (connections.has(account.id)) return connections.get(account.id);
 
-  // 5. 检查凭证文件
-  const sessionDir = getSessionDir(account.id);
-  const credsPath = path.join(sessionDir, "creds.json");
-  if (!fs.existsSync(credsPath)) {
-    logger.warn(`[${identifier}] 凭证文件不存在，标记为过期`);
-    await updateAccountStatus(account.id, account.phoneNumber, LOGIN_STATUS.EXPIRED, "disconnected");
-    const err = new Error("凭证文件丢失，请重新登录");
-    err.code = 404;
-    err.type = "CREDENTIALS_MISSING";
-    throw err;
-  }
-
-  // 6. 创建新连接
+  // 5. 创建新连接
   const result = await createConnection(account, callback);
 
   if (result?.status === "connected") {
