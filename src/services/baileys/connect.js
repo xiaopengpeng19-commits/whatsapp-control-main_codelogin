@@ -323,7 +323,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
 async function notifyConnection(identifier, sock) {
   console.log(`📡 [notifyConnection] 开始推送: ${identifier}`);
   try {
-    const nats = require("../config/nats");
+    const nats = require("../../config/nats");
     const accountPhone = sock.user?.id?.split("@")[0]?.split(":")[0] || identifier;
     
     console.log(`📡 [notifyConnection] 准备推送: accountId=${identifier}, phone=${accountPhone}`);
