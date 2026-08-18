@@ -285,38 +285,52 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
+// 在 getConnection 返回前推送
+
 async function getConnection(identifier, callback = null, proxyOverride = null) {
-  // 1. 检查内存连接
+  // 1. 复用已有连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
-    if (sock?.user) return sock;
+    if (sock?.user) {
+      // ✅ 推送给云控：账号在线
+      await notifyConnection(identifier, sock);
+      return sock;
+    }
     connections.delete(identifier);
   }
 
-  // 2. 从 Redis 获取账号
-  const accountService = require("../account");
+  // 2. 创建新连接
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
     logger.error(`[${identifier}] 账号不存在`);
     return null;
   }
 
-  // 3. 如果传入了 proxyOverride，覆盖 account.proxy
-  if (proxyOverride) {
-    account.proxy = proxyOverride;
+  const sock = await createConnection(account, callback);
+  if (sock) {
+    // ✅ 推送给云控：账号在线
+    await notifyConnection(identifier, sock);
+    return sock;
   }
+  return null;
+}
 
-  // 4. 检查内存连接（用 account.id）
-  if (connections.has(account.id)) return connections.get(account.id);
-
-  // 5. 创建新连接
-  const result = await createConnection(account, callback);
-
-  if (result?.status === "connected") {
-    return result.sock;
+// 统一的推送函数
+async function notifyConnection(identifier, sock) {
+  try {
+    const nats = require("../config/nats");
+    const accountPhone = sock.user?.id?.split("@")[0]?.split(":")[0] || identifier;
+    await nats.publishMessage("connection", {
+      accountId: identifier,
+      accountPhone: accountPhone,
+      accountStatus: "normal",
+      socketStatus: "connected",
+      updatedAt: new Date().toISOString(),
+    });
+    logger.info(`[${identifier}] ✅ 账号在线已推送 (phone: ${accountPhone})`);
+  } catch (err) {
+    logger.error(`[${identifier}] ❌ 推送失败:`, err);
   }
-
-  throw new Error(result?.error || "连接失败");
 }
 async function closeConnection(accountId) {
   if (connections.has(accountId)) {
