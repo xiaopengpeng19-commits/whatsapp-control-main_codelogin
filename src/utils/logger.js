@@ -43,7 +43,7 @@ const getLogFileName = () => {
 cleanOldLogs();
 
 // ========== 日志配置 ==========
-const LOG_LEVEL = process.env.LOG_LEVEL || "error";
+const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 
 const baseLogger = pino({
   level: LOG_LEVEL,
