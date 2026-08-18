@@ -23,7 +23,7 @@ const {
   handleMessagingHistory,
   handleChatsUpsert,
 } = require("./message-handler");
-
+const accountService = require("../account");
 const logger = conn;
 const connections = new Map();
 
