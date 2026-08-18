@@ -287,38 +287,34 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
 // src/services/baileys/connect.js
 
+// src/services/baileys/connect.js - 原始 getConnection（不含推送）
+
 async function getConnection(identifier, callback = null, proxyOverride = null) {
-  // ✅ 延迟加载，避免循环依赖
   const accountService = require("../account");
 
   // 1. 复用已有连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
     if (sock?.user) {
-      // ✅ 推送给云控：账号在线
-      await notifyConnection(identifier, sock);
       return sock;
     }
     connections.delete(identifier);
   }
 
-  // 2. 创建新连接
+  // 2. 从 Redis 获取账号
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
     logger.error(`[${identifier}] 账号不存在`);
     return null;
   }
 
-  // 如果有代理覆盖，更新代理
   if (proxyOverride) {
     account.proxy = proxyOverride;
   }
 
-  // 3. 创建连接
+  // 3. 创建新连接
   const sock = await createConnection(account, callback);
   if (sock) {
-    // ✅ 推送给云控：账号在线
-    await notifyConnection(identifier, sock);
     return sock;
   }
   return null;
