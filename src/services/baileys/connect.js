@@ -23,7 +23,7 @@ const {
   handleMessagingHistory,
   handleChatsUpsert,
 } = require("./message-handler");
-const accountService = require("../account");
+
 const logger = conn;
 const connections = new Map();
 
@@ -285,9 +285,12 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
-// 在 getConnection 返回前推送
+// src/services/baileys/connect.js
 
 async function getConnection(identifier, callback = null, proxyOverride = null) {
+  // ✅ 延迟加载，避免循环依赖
+  const accountService = require("../account");
+
   // 1. 复用已有连接
   if (connections.has(identifier)) {
     const sock = connections.get(identifier);
@@ -306,6 +309,12 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
     return null;
   }
 
+  // 如果有代理覆盖，更新代理
+  if (proxyOverride) {
+    account.proxy = proxyOverride;
+  }
+
+  // 3. 创建连接
   const sock = await createConnection(account, callback);
   if (sock) {
     // ✅ 推送给云控：账号在线
@@ -394,7 +403,7 @@ async function sendRestartNotification() {
 
 module.exports = {
   createConnection,
-  getConnection,
+  getConnection, // ← 这里导出了
   closeConnection,
   CloseConnection,
   getAllConnections,
