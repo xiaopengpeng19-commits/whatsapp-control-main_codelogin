@@ -285,10 +285,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
-// src/services/baileys/connect.js
-
-// src/services/baileys/connect.js - 原始 getConnection（不含推送）
-
 async function getConnection(identifier, callback = null, proxyOverride = null) {
   const accountService = require("../account");
 
@@ -313,9 +309,9 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
   }
 
   // 3. 创建新连接
-  const sock = await createConnection(account, callback);
-  if (sock) {
-    return sock;
+  const result = await createConnection(account, callback);
+  if (result?.status === "connected") {
+    return result.sock;  // ← 返回 result.sock
   }
   return null;
 }
