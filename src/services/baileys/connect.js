@@ -311,7 +311,8 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
   // 3. 创建新连接
   const result = await createConnection(account, callback);
   if (result?.status === "connected") {
-    return result.sock;  // ← 返回 result.sock
+    notifyConnection(identifier, result.sock);
+    return result.sock; // ← 返回 result.sock
   }
   return null;
 }
