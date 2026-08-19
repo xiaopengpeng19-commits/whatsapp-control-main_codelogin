@@ -172,7 +172,16 @@ class ConnectionPool {
     this.pendingQueue = [];
     logger.info(`[连接池] 清空完成`);
   }
-
+  set(accountId, sock) {
+    this.connections.set(accountId, {
+      connection: sock,
+      lastUsed: Date.now(),
+      createdAt: Date.now(),
+      accountId: accountId,
+    });
+    logger.info(`[连接池] 添加连接: ${accountId}，当前: ${this.connections.size}/${this.maxSize}`);
+    this._processQueue();
+  }
   isHealthy(accountId) {
     const entry = this.connections.get(accountId);
     if (!entry) return false;
