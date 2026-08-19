@@ -1,4 +1,5 @@
 // src/services/baileys/connect.js
+
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion,
@@ -25,8 +26,26 @@ const {
 } = require("./message-handler");
 
 const logger = conn;
-const connections = new Map();
 
+// ==========================================
+// 连接池（单例）
+// ==========================================
+const ConnectionPool = require("./connection-pool");
+
+// 从环境变量读取配置
+const MAX_CONNECTIONS = parseInt(process.env.MAX_CONNECTIONS) || 150;
+const MIN_CONNECTIONS = parseInt(process.env.MIN_CONNECTIONS) || 10;
+const IDLE_TIMEOUT_MINUTES = parseInt(process.env.IDLE_TIMEOUT_MINUTES) || 30;
+
+const connectionPool = new ConnectionPool({
+  maxSize: MAX_CONNECTIONS,
+  minSize: MIN_CONNECTIONS,
+  idleTimeout: IDLE_TIMEOUT_MINUTES * 60 * 1000,
+});
+
+// ==========================================
+// 创建连接
+// ==========================================
 async function createConnection(account, onConnected = null, usePairCode = false) {
   const accountId = account.id;
   let resolveFunc, rejectFunc;
@@ -58,8 +77,8 @@ async function createConnection(account, onConnected = null, usePairCode = false
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
-      reconnect: false, // ✅ 禁用自动重连
-      maxReconnectAttempts: 0, // ✅ 不重试
+      reconnect: false,
+      maxReconnectAttempts: 0,
       agent: proxyAgent,
       fetchAgent: proxyAgent,
       shouldSyncHistoryMessage: () => shouldSync,
@@ -94,12 +113,10 @@ async function createConnection(account, onConnected = null, usePairCode = false
       usePairCode,
       onConnected,
       saveCreds,
-      connections,
+      connectionPool, // ✅ 传入 connectionPool
       _resolved: false,
     };
     const connectionHandler = createConnectionHandler(sock, account, ctx);
-
-    // src/services/baileys/connect.js
 
     sock.ev.process(async (events) => {
       const eventKeys = Object.keys(events);
@@ -107,28 +124,23 @@ async function createConnection(account, onConnected = null, usePairCode = false
         logger.info(`[${accountId}] 触发事件:`, eventKeys);
       }
 
-      // 1. 凭证更新
       if (events["creds.update"]) {
         await saveCreds();
         baileysLogger.debug(`[${accountId}] 凭证已保存`);
       }
 
-      // 2. 连接状态更新
       if (events["connection.update"]) {
         connectionHandler(events["connection.update"]);
       }
 
-      // 3. 联系人更新（手机端添加联系人时触发）
       if (events["contacts.upsert"]) {
         const contacts = events["contacts.upsert"];
         logger.info(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
-
         for (const contact of contacts || []) {
           try {
             const jid = contact.id || contact.phoneNumber;
             const phoneNumber = jid?.split("@")[0] || jid;
             const name = contact.name || contact.notify || phoneNumber;
-
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
               peerPhone: phoneNumber,
@@ -139,7 +151,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
               isGroup: jid?.includes("g.us") || false,
               contactAdded: true,
             });
-
             logger.info(`[${accountId}] ✅ 联系人已保存: ${phoneNumber}`);
           } catch (error) {
             logger.error(`[${accountId}] ❌ 保存联系人失败:`, error);
@@ -147,7 +158,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
         }
       }
 
-      // 4. 历史同步
       if (events["messaging-history.set"]) {
         if (account.phoneNumber) {
           await setAccountSyncFlag(account.phoneNumber, true);
@@ -156,19 +166,13 @@ async function createConnection(account, onConnected = null, usePairCode = false
         await handleMessagingHistory(events, accountId, account.phoneNumber);
       }
 
-      // 5. 新消息
       if (events["messages.upsert"]) {
         const upsert = events["messages.upsert"];
-
-        // 打印完整数据（调试用）
         logger.info(`[${accountId}] messages.upsert 数据:`, JSON.stringify(upsert, null, 2));
-
         if (upsert.type === "notify" || upsert.type === "append") {
           sock.lastActiveTime = new Date();
           for (const msg of upsert.messages || []) {
             const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-
-            // 特殊命令处理
             if (text === "requestPlaceholder" && !upsert.requestId) {
               await sock.requestPlaceholderResend(msg.key);
               continue;
@@ -177,35 +181,27 @@ async function createConnection(account, onConnected = null, usePairCode = false
               await sock.fetchMessageHistory(50, msg.key, msg.messageTimestamp);
               continue;
             }
-
             await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }
       }
 
-      // 6. 消息状态更新（已读/送达）
       if (events["messages.update"]) {
         await handleMessageStatusUpdate(events["messages.update"], accountId, account.phoneNumber);
       }
 
-      // 7. 消息回执
       if (events["message-receipt.update"]) {
         await handleMessageReceiptUpdate(events["message-receipt.update"], accountId, account.phoneNumber);
       }
 
-      // 9. 新聊天会话
       if (events["chats.upsert"]) {
         logger.info(`[${accountId}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
 
-      // src/services/baileys/connect.js - 在 sock.ev.process 中添加
-
-      // 群组成员变化
       if (events["group-participants.update"]) {
         const update = events["group-participants.update"];
         logger.info(`[${accountId}] group-participants.update:`, JSON.stringify(update, null, 2));
-
         await nats.publishMessage("group.event", {
           accountId: accountId,
           accountPhone: account.phoneNumber,
@@ -220,11 +216,9 @@ async function createConnection(account, onConnected = null, usePairCode = false
         });
       }
 
-      // 群组信息更新
       if (events["groups.update"]) {
         const updates = events["groups.update"];
         logger.info(`[${accountId}] groups.update:`, JSON.stringify(updates, null, 2));
-
         for (const update of updates) {
           await nats.publishMessage("group.event", {
             accountId: accountId,
@@ -241,11 +235,9 @@ async function createConnection(account, onConnected = null, usePairCode = false
         }
       }
 
-      // 新群组（被拉入群）
       if (events["groups.upsert"]) {
         const groups = events["groups.upsert"];
         logger.info(`[${accountId}] groups.upsert:`, JSON.stringify(groups, null, 2));
-
         for (const group of groups) {
           await nats.publishMessage("group.event", {
             accountId: accountId,
@@ -261,9 +253,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
           });
         }
       }
-
-      // 群聊消息（在 messages.upsert 中判断）
-      // ... 已有 messages.upsert 处理中，如果 remoteJid 包含 @g.us，再推送一份到 group.event
     });
 
     const timeoutDuration = usePairCode ? 60000 : 120000;
@@ -285,16 +274,19 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
+// ==========================================
+// 获取连接
+// ==========================================
 async function getConnection(identifier, callback = null, proxyOverride = null) {
   const accountService = require("../account");
 
-  // 1. 复用已有连接
-  if (connections.has(identifier)) {
-    const sock = connections.get(identifier);
+  // 1. 检查连接池
+  if (connectionPool.has(identifier)) {
+    const sock = connectionPool.get(identifier);
     if (sock?.user) {
       return sock;
     }
-    connections.delete(identifier);
+    connectionPool.release(identifier);
   }
 
   // 2. 从 Redis 获取账号
@@ -308,26 +300,25 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
     account.proxy = proxyOverride;
   }
 
-  // 3. 创建新连接
-  const result = await createConnection(account, callback);
-  if (result?.status === "connected") {
-    notifyConnection(identifier, result.sock);
-    return result.sock; // ← 返回 result.sock
-  }
-  return null;
+  // 3. 使用连接池获取连接
+  return connectionPool.acquire(account.id, async () => {
+    const result = await createConnection(account, callback);
+    if (result?.status === "connected") {
+      return result.sock;
+    }
+    throw new Error(result?.error || "连接失败");
+  });
 }
 
-// 统一的推送函数
-// connect.js
-
+// ==========================================
+// 通知推送
+// ==========================================
 async function notifyConnection(identifier, sock) {
   console.log(`📡 [notifyConnection] 开始推送: ${identifier}`);
   try {
     const nats = require("../../config/nats");
     const accountPhone = sock.user?.id?.split("@")[0]?.split(":")[0] || identifier;
-    
     console.log(`📡 [notifyConnection] 准备推送: accountId=${identifier}, phone=${accountPhone}`);
-    
     await nats.publishMessage("connection", {
       accountId: identifier,
       accountPhone: accountPhone,
@@ -343,53 +334,62 @@ async function notifyConnection(identifier, sock) {
   }
 }
 
+// ==========================================
+// 关闭连接
+// ==========================================
 async function closeConnection(accountId) {
-  if (connections.has(accountId)) {
-    try {
-      const sock = connections.get(accountId);
+  if (connectionPool.has(accountId)) {
+    const sock = connectionPool.get(accountId);
+    if (sock) {
       sock._manualClose = true;
       await sock.end();
-      connections.delete(accountId);
-      logger.info(`[${accountId}] 连接已关闭`);
-      return true;
-    } catch (error) {
-      logger.error(`[${accountId}] 关闭连接失败:`, error);
-      connections.delete(accountId);
-      return false;
     }
+    connectionPool.release(accountId);
+    logger.info(`[${accountId}] 连接已关闭`);
+    return true;
   }
   return false;
 }
 
 async function CloseConnection(idOrPhone) {
-  if (connections.has(idOrPhone)) return await closeConnection(idOrPhone);
+  if (connectionPool.has(idOrPhone)) {
+    return await closeConnection(idOrPhone);
+  }
   const accountService = require("../account");
   const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
-  if (account && connections.has(account.id)) return await closeConnection(account.id);
+  if (account && connectionPool.has(account.id)) {
+    return await closeConnection(account.id);
+  }
   logger.warn(`[${idOrPhone}] 未找到对应的活动连接`);
   return false;
 }
 
+// ==========================================
+// 获取连接状态
+// ==========================================
 function getConnectionStatus(accountId) {
-  return connections.get(accountId)?.account_status || null;
+  const entry = connectionPool.connections.get(accountId);
+  return entry?.connection?.account_status || null;
 }
 
 function getAllConnections() {
-  return connections;
+  return connectionPool.connections;
 }
 
+// ==========================================
+// 空闲清理
+// ==========================================
 async function intervalStopIdelConnection() {
-  const oneHourAgo = new Date(Date.now() - 10 * 60 * 1000);
-  let closedCount = 0;
-  for (const [accountId, sock] of connections) {
-    if (sock.lastActiveTime && sock.lastActiveTime < oneHourAgo) {
-      await closeConnection(accountId);
-      closedCount++;
-    }
+  const evicted = connectionPool.evictIdle();
+  if (evicted > 0) {
+    logger.info(`清理 ${evicted} 个空闲连接`);
   }
-  return closedCount;
+  return evicted;
 }
 
+// ==========================================
+// 重启通知
+// ==========================================
 async function sendRestartNotification() {
   try {
     await nats.publishMessage("system.restart", {
@@ -403,9 +403,12 @@ async function sendRestartNotification() {
   }
 }
 
+// ==========================================
+// 导出
+// ==========================================
 module.exports = {
   createConnection,
-  getConnection, // ← 这里导出了
+  getConnection,
   closeConnection,
   CloseConnection,
   getAllConnections,
@@ -413,4 +416,5 @@ module.exports = {
   intervalStopIdelConnection,
   sendRestartNotification,
   LOGIN_STATUS,
+  connectionPool,
 };

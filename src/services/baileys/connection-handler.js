@@ -1,4 +1,5 @@
 // src/services/baileys/connection-handler.js
+
 const { Boom } = require("@hapi/boom");
 const { DisconnectReason } = require("@whiskeysockets/baileys");
 const { LOGIN_STATUS } = require("./constants");
@@ -6,8 +7,6 @@ const { cleanupSession } = require("./utils");
 const redisStorage = require("../redisStorage");
 const { conn } = require("../../utils/logger");
 const logger = conn;
-
-// src/services/baileys/connection-handler.js
 
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
@@ -40,7 +39,7 @@ async function updateAccountStatus(accountId, phoneNumber, accountStatus, socket
   }
 }
 
-// ========== 配对码模式：收到 qr 后请求配对码 ==========
+// ========== 配对码模式 ==========
 function handleQRCodeForPairing(sock, account, ctx) {
   const { accountId, resolveFunc, rejectFunc } = ctx;
   const phoneNumber = account.phoneNumber;
@@ -55,18 +54,11 @@ function handleQRCodeForPairing(sock, account, ctx) {
     return;
   }
 
-  if (!rejectFunc || typeof rejectFunc !== "function") {
-    logger.error(`[${accountId}] rejectFunc 无效，无法处理配对码请求`);
-    return;
-  }
-
   sock
     .requestPairingCode(phoneNumber)
     .then((code) => {
       logger.info(`[${accountId}] 配对码生成成功: ${code}`);
-
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE, "disconnected");
-
       if (resolveFunc && typeof resolveFunc === "function") {
         resolveFunc({
           status: "waiting_pair_code",
@@ -74,22 +66,19 @@ function handleQRCodeForPairing(sock, account, ctx) {
           accountId,
           phoneNumber: account.phoneNumber,
         });
-      } else {
-        logger.error(`[${accountId}] resolveFunc 无效，无法返回配对码`);
       }
     })
     .catch((err) => {
       logger.error(`[${accountId}] 请求配对码失败:`, err);
       sock.account_status = LOGIN_STATUS.FAILED;
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
-
       if (rejectFunc && typeof rejectFunc === "function") {
         rejectFunc(err);
       }
     });
 }
 
-// ========== 二维码模式：直接返回 qr ==========
+// ========== 二维码模式 ==========
 function handleQRCode(sock, account, qr, ctx) {
   const { accountId, resolveFunc } = ctx;
   logger.info(`[${accountId}] QR码已生成`);
@@ -99,8 +88,9 @@ function handleQRCode(sock, account, qr, ctx) {
   }
 }
 
+// ========== 连接关闭 ==========
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
-  const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected } = ctx;
+  const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected, connectionPool } = ctx;
 
   if (ctx._resolved) {
     logger.debug(`[${accountId}] 连接已处理，跳过重复关闭事件`);
@@ -110,10 +100,9 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
 
-  // ========== 手动关闭 ==========
+  // 手动关闭
   if (isManualClose) {
     logger.info(`[${accountId}] 手动关闭连接`);
-    ctx.connections.delete(accountId);
     if (rejectFunc && typeof rejectFunc === "function") {
       const err = new Error("手动关闭");
       err.code = 200;
@@ -123,7 +112,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     return;
   }
 
-  // ========== 515 重启 ==========
+  // 515 重启
   if (statusCode === 515) {
     ctx._resolved = true;
     logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
@@ -131,7 +120,6 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     createConnection(account, onConnected, true)
       .then((result) => {
         if (result?.status === "connected") {
-          ctx.connections.set(accountId, result.sock);
           if (resolveFunc && typeof resolveFunc === "function") {
             resolveFunc(result);
           }
@@ -154,7 +142,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     return;
   }
 
-  // ========== 401/403：凭证失效，彻底清理 ==========
+  // 401/403：凭证失效
   if (statusCode === 401 || statusCode === 403) {
     logger.warn(`[${accountId}] 凭证已失效 (${statusCode})，彻底清理账号数据`);
 
@@ -163,8 +151,8 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
         const redisStorage = require("../redisStorage");
         await redisStorage.deleteAccount(accountId);
         logger.info(`[${accountId}] 已从 Redis 删除`);
-
-        const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(accountId));
+        const sessionDir = require("path").join(process.env.STORAGE_PATH || "./storage/sessions", String(accountId));
+        const fs = require("fs");
         if (fs.existsSync(sessionDir)) {
           fs.rmSync(sessionDir, { recursive: true, force: true });
           logger.info(`[${accountId}] 已删除会话目录: ${sessionDir}`);
@@ -174,22 +162,17 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
       }
     });
 
-    ctx.connections.delete(accountId);
     if (rejectFunc && typeof rejectFunc === "function") {
-      // ========== 使用自定义错误对象 ==========
       const err = new Error(`凭证已失效，请重新登录 (${statusCode})`);
-      err.code = statusCode; // 401 或 403
+      err.code = statusCode;
       err.type = "CREDENTIALS_EXPIRED";
       rejectFunc(err);
     }
     return;
   }
 
-  // ========== 其他错误（网络超时、代理故障等） ==========
+  // 其他错误
   logger.warn(`[${accountId}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
-
-  ctx.connections.delete(accountId);
-
   if (rejectFunc && typeof rejectFunc === "function") {
     const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
     err.code = statusCode || 500;
@@ -198,10 +181,10 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   }
 }
 
+// ========== 连接打开 ==========
 function handleConnectionOpen(sock, account, ctx) {
-  const { accountId, resolveFunc, onConnected, connections } = ctx;
+  const { accountId, resolveFunc, onConnected, connectionPool } = ctx;
 
-  // ========== 防止重复处理 ==========
   if (ctx._resolved) {
     logger.debug(`[${accountId}] 连接已处理，跳过重复打开事件`);
     return;
@@ -221,7 +204,7 @@ function handleConnectionOpen(sock, account, ctx) {
   sock.lastActiveTime = new Date();
 
   updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED, "connected");
-  connections.set(accountId, sock);
+  connectionPool.set(accountId, sock); // ✅ 使用 connectionPool
 
   logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
 
@@ -245,12 +228,10 @@ function createConnectionHandler(sock, account, ctx) {
     const { connection, lastDisconnect, qr } = update;
     logger.debug(`[${ctx.accountId}] 连接更新:`, update);
 
-    // ========== 配对码模式：收到 qr 后请求配对码 ==========
     if (qr && usePairCode) {
       return handleQRCodeForPairing(sock, account, ctx);
     }
 
-    // ========== 二维码模式：直接返回 qr ==========
     if (qr && !usePairCode) {
       return handleQRCode(sock, account, qr, ctx);
     }
