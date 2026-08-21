@@ -8,9 +8,14 @@ function redisKey(...parts) {
   return parts.map((part) => encodeURIComponent(String(part))).join(":");
 }
 
-function parseValue(value) {
+function parseValue(value, key) {
   if (value === undefined || value === null) {
     return null;
+  }
+
+  // ========== 保护特定字段 ==========
+  if (key === "accountId" || key === "id" || key === "phoneNumber") {
+    return String(value);
   }
 
   if (value === "true") {
@@ -37,7 +42,7 @@ function parseObject(object) {
 
   const parsed = {};
   for (const [key, value] of Object.entries(object)) {
-    parsed[key] = parseValue(value);
+    parsed[key] = parseValue(value, key); // ← 传递 key
   }
   return parsed;
 }
