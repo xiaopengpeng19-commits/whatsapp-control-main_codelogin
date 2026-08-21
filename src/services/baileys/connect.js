@@ -198,6 +198,9 @@ async function createConnection(account, onConnected = null, usePairCode = false
         logger.info(`[${accountId}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
+      if (events["chats.update"]) {
+        logger.info(`[${accountId}] chats.update 数据:`, JSON.stringify(events["chats.update"], null, 2));
+      }
 
       if (events["group-participants.update"]) {
         const update = events["group-participants.update"];
