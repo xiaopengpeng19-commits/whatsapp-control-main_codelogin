@@ -199,12 +199,44 @@ async function createConnection(account, onConnected = null, usePairCode = false
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
       if (events["chats.update"]) {
-        const update = events["chats.update"];
-        logger.info(`[${accountId}] chats.update 数据:`, JSON.stringify(update, null, 2));
-        // 如果 update 是数组，遍历
-        if (Array.isArray(update)) {
-          for (const item of update) {
-            logger.info(`[${accountId}] chats.update item:`, JSON.stringify(item, null, 2));
+        const updates = events["chats.update"];
+        logger.info(`[${accountId}] chats.update 数据:`, JSON.stringify(updates, null, 2));
+
+        // ========== 新增：保存会话 ==========
+        for (const update of updates) {
+          if (update.id) {
+            const jid = update.id;
+            // 从 messages 里提取手机号和名字
+            let phoneNumber = jid.split("@")[0] || jid;
+            let name = phoneNumber;
+
+            // 如果有消息，从消息里提取 pushName 和手机号
+            if (update.messages && update.messages.length > 0) {
+              const msg = update.messages[0];
+              if (msg.message) {
+                // 从 remoteJidAlt 获取真实手机号
+                const altJid = msg.message.key?.remoteJidAlt;
+                if (altJid) {
+                  phoneNumber = altJid.split("@")[0] || altJid;
+                }
+                // 从 pushName 获取名字
+                if (msg.message.pushName) {
+                  name = msg.message.pushName;
+                }
+              }
+            }
+
+            await redisStorage.upsertChat({
+              id: snowflake.nextId(),
+              peerPhone: phoneNumber,
+              peerId: jid,
+              peerName: name,
+              accountId: accountId,
+              accountPhone: account.phoneNumber,
+              isGroup: jid.includes("g.us") || false,
+              contactAdded: true,
+            });
+            logger.info(`[${accountId}] ✅ 从 chats.update 保存会话: ${phoneNumber} (${name})`);
           }
         }
       }
