@@ -199,7 +199,14 @@ async function createConnection(account, onConnected = null, usePairCode = false
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
       if (events["chats.update"]) {
-        logger.info(`[${accountId}] chats.update 数据:`, JSON.stringify(events["chats.update"], null, 2));
+        const update = events["chats.update"];
+        logger.info(`[${accountId}] chats.update 数据:`, JSON.stringify(update, null, 2));
+        // 如果 update 是数组，遍历
+        if (Array.isArray(update)) {
+          for (const item of update) {
+            logger.info(`[${accountId}] chats.update item:`, JSON.stringify(item, null, 2));
+          }
+        }
       }
 
       if (events["group-participants.update"]) {
