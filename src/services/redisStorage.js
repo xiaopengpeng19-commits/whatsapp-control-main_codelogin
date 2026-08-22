@@ -280,7 +280,10 @@ async function upsertChat(chat) {
   // ========== 过滤官方账号/无效账号 ==========
   const peerPhone = chat.peerPhone || "";
   const peerId = chat.peerId || "";
-
+  if (!peerId || !peerId.includes("@lid")) {
+    logger.debug(`跳过非 lid 格式: peerId=${peerId}, peerPhone=${peerPhone}`);
+    return null;
+  }
   // 手机号为 0 或空 → 跳过
   if (String(peerPhone) === "0" || String(peerPhone) === "") {
     logger.debug(`跳过无效账号: peerPhone=${peerPhone}, peerId=${peerId}`);
