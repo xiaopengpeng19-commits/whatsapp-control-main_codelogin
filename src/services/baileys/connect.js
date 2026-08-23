@@ -139,7 +139,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
         for (const contact of contacts || []) {
           try {
             const jid = contact.lid;
-            const phoneNumber = contact.phoneNumber;
+            const phoneNumber = contact.phoneNumber.split("@")[0];
             const name = contact.name || contact.notify || phoneNumber;
 
             await redisStorage.upsertChat({
@@ -149,7 +149,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
               peerName: name,
               accountId: accountId,
               accountPhone: account.phoneNumber,
-              isGroup: contact.id?.includes("g.us") || false,
+              isGroup: phoneNumber?.includes("g.us") || false,
               contactAdded: true,
             });
             logger.info(`[${account.phoneNumber}] ✅ 联系人已保存: ${phoneNumber}`);
