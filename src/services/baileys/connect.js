@@ -138,12 +138,10 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
         for (const contact of contacts || []) {
           try {
-            const jid = contact.id || contact.phoneNumber;
-            const phoneNumber = jid?.split("@")[0] || jid;
+            const jid = contact.lid;
+            const phoneNumber = contact.phoneNumber;
             const name = contact.name || contact.notify || phoneNumber;
 
-            logger.info(`[${account.phoneNumber}] contact 字段:`, Object.keys(contact));
-            logger.info(`[${account.phoneNumber}] 联系人更新: phoneNumber = ${phoneNumber} ID = ${contact.id} `);
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
               peerPhone: phoneNumber,
@@ -151,7 +149,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
               peerName: name,
               accountId: accountId,
               accountPhone: account.phoneNumber,
-              isGroup: jid?.includes("g.us") || false,
+              isGroup: contact.id?.includes("g.us") || false,
               contactAdded: true,
             });
             logger.info(`[${account.phoneNumber}] ✅ 联系人已保存: ${phoneNumber}`);
