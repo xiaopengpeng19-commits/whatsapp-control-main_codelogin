@@ -276,7 +276,9 @@ async function deleteAccount(accountId) {
 
 async function upsertChat(chat) {
   const client = getClient();
-
+  if (chat.isGroup) {
+    return null;
+  }
   // ========== 过滤官方账号/无效账号 ==========
   const peerPhone = chat.peerPhone || "";
   const peerId = chat.peerId || "";
