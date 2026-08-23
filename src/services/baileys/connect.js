@@ -135,9 +135,10 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["contacts.upsert"]) {
         const contacts = events["contacts.upsert"];
-        logger.info(`[${accountId}] 联系人更新: ${contacts?.length || 0} 个`);
+        
         for (const contact of contacts || []) {
           try {
+            logger.info(`[${account.phoneNumber}] 联系人更新: phoneNumber = ${contact.phoneNumber} ID = ${contact.id} `);
             const jid = contact.id || contact.phoneNumber;
             const phoneNumber = jid?.split("@")[0] || jid;
             const name = contact.name || contact.notify || phoneNumber;
