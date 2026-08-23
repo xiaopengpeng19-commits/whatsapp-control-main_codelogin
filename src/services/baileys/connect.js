@@ -142,6 +142,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
             const phoneNumber = jid?.split("@")[0] || jid;
             const name = contact.name || contact.notify || phoneNumber;
 
+            logger.info(`[${account.phoneNumber}] contact 字段:`, Object.keys(contact));
             logger.info(`[${account.phoneNumber}] 联系人更新: phoneNumber = ${phoneNumber} ID = ${contact.id} `);
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
