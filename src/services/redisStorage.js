@@ -289,7 +289,10 @@ async function upsertChat(chat) {
     logger.debug(`跳过无效账号: peerPhone=${peerPhone}, peerId=${peerId}`);
     return null;
   }
-
+  if (peerId.includes("@newsletter")) {
+    logger.debug(`跳过 Newsletter: ${peerId}`);
+    return null;
+  }
   // ========== 正常保存 ==========
   const chatKey = getChatKey(chat.accountId, chat.peerId);
   const existingData = await client.hGetAll(chatKey);
