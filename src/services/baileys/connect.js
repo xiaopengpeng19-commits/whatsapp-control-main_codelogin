@@ -135,10 +135,9 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["contacts.upsert"]) {
         const contacts = events["contacts.upsert"];
-        
+
         for (const contact of contacts || []) {
           try {
-            
             const jid = contact.id || contact.phoneNumber;
             const phoneNumber = jid?.split("@")[0] || jid;
             const name = contact.name || contact.notify || phoneNumber;
@@ -203,43 +202,44 @@ async function createConnection(account, onConnected = null, usePairCode = false
       }
       if (events["chats.update"]) {
         const updates = events["chats.update"];
-        logger.info(`[${account.phoneNumber}] chats.update 数据:`, JSON.stringify(updates, null, 2));
-
-        // ========== 新增：保存会话 ==========
         for (const update of updates) {
-          if (update.id) {
-            const jid = update.id;
-            // 从 messages 里提取手机号和名字
-            let phoneNumber = jid.split("@")[0] || jid;
-            let name = phoneNumber;
+          const id = update.id; // 会话 ID
 
-            // 如果有消息，从消息里提取 pushName 和手机号
-            if (update.messages && update.messages.length > 0) {
-              const msg = update.messages[0];
-              if (msg.message) {
-                // 从 remoteJidAlt 获取真实手机号
-                const altJid = msg.message.key?.remoteJidAlt;
-                if (altJid) {
-                  phoneNumber = altJid.split("@")[0] || altJid;
+          // ========== 跳过群聊 ==========
+          if (id && id.includes("@g.us")) {
+            logger.debug(`[${accountId}] 跳过群聊: ${id}`);
+            continue;
+          }
+
+          // ========== 只处理单聊 ==========
+          // 从 messages 中提取联系人信息
+          for (const msgData of update.messages || []) {
+            const key = msgData.message?.key;
+            const pushName = msgData.message?.pushName;
+
+            if (key) {
+              const jid = key.remoteJid; // 可能是 @lid 或 @s.whatsapp.net
+              const altJid = key.remoteJidAlt; // @s.whatsapp.net
+
+              // 只处理单聊（不是群聊）
+              if (jid && !jid.includes("@g.us") && !jid.includes("@newsletter")) {
+                let peerPhone = "";
+                if (altJid && altJid.includes("@s.whatsapp.net")) {
+                  peerPhone = altJid.split("@")[0];
+                } else {
+                  peerPhone = jid.split("@")[0];
                 }
-                // 从 pushName 获取名字
-                if (msg.message.pushName) {
-                  name = msg.message.pushName;
-                }
+
+                await redisStorage.upsertChat({
+                  accountId: accountId,
+                  accountPhone: account.phoneNumber,
+                  peerPhone: peerPhone,
+                  peerId: jid, // @lid 格式
+                  peerName: pushName || peerPhone,
+                  isGroup: false,
+                });
               }
             }
-
-            await redisStorage.upsertChat({
-              id: snowflake.nextId(),
-              peerPhone: phoneNumber,
-              peerId: jid,
-              peerName: name,
-              accountId: accountId,
-              accountPhone: account.phoneNumber,
-              isGroup: jid.includes("g.us") || false,
-              contactAdded: true,
-            });
-            logger.info(`[${account.phoneNumber}] ✅ 从 chats.update 保存会话: ${phoneNumber} (${name})`);
           }
         }
       }
@@ -302,7 +302,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
     const timeoutDuration = usePairCode ? 60000 : 120000;
     const timeoutId = setTimeout(() => {
-      baileysLogger.error(`[${accountId}] 登录超时`);
+      baileysLogger.error(`[${account.phoneNumber}] 登录超时`);
       sock.account_status = LOGIN_STATUS.FAILED;
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "connected");
       if (rejectFunc && typeof rejectFunc === "function") {
@@ -314,7 +314,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
     clearTimeout(timeoutId);
     return result;
   } catch (error) {
-    logger.error(`[${accountId}] 创建连接失败:`, error);
+    logger.error(`[${account.phoneNumber}] 创建连接失败:`, error);
     return { status: "failed", error: error.message };
   }
 }
