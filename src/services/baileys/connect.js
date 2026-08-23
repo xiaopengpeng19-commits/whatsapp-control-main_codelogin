@@ -121,7 +121,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
     sock.ev.process(async (events) => {
       const eventKeys = Object.keys(events);
       if (eventKeys.length > 0) {
-        logger.info(`[${accountId}] 触发事件:`, eventKeys);
+        logger.info(`[${account.phoneNumber}] 触发事件:`, eventKeys);
       }
 
       if (events["creds.update"]) {
@@ -138,10 +138,12 @@ async function createConnection(account, onConnected = null, usePairCode = false
         
         for (const contact of contacts || []) {
           try {
-            logger.info(`[${account.phoneNumber}] 联系人更新: phoneNumber = ${contact.phoneNumber} ID = ${contact.id} `);
+            
             const jid = contact.id || contact.phoneNumber;
             const phoneNumber = jid?.split("@")[0] || jid;
             const name = contact.name || contact.notify || phoneNumber;
+
+            logger.info(`[${account.phoneNumber}] 联系人更新: phoneNumber = ${phoneNumber} ID = ${contact.id} `);
             await redisStorage.upsertChat({
               id: snowflake.nextId(),
               peerPhone: phoneNumber,
@@ -152,7 +154,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
               isGroup: jid?.includes("g.us") || false,
               contactAdded: true,
             });
-            logger.info(`[${accountId}] ✅ 联系人已保存: ${phoneNumber}`);
+            logger.info(`[${account.phoneNumber}] ✅ 联系人已保存: ${phoneNumber}`);
           } catch (error) {
             logger.error(`[${accountId}] ❌ 保存联系人失败:`, error);
           }
@@ -162,14 +164,14 @@ async function createConnection(account, onConnected = null, usePairCode = false
       if (events["messaging-history.set"]) {
         if (account.phoneNumber) {
           await setAccountSyncFlag(account.phoneNumber, true);
-          logger.info(`[${accountId}] 历史同步完成，已标记 ${account.phoneNumber}`);
+          logger.info(`[${account.phoneNumber}] 历史同步完成，已标记 ${account.phoneNumber}`);
         }
         await handleMessagingHistory(events, accountId, account.phoneNumber);
       }
 
       if (events["messages.upsert"]) {
         const upsert = events["messages.upsert"];
-        logger.info(`[${accountId}] messages.upsert 数据:`, JSON.stringify(upsert, null, 2));
+        logger.info(`[${account.phoneNumber}] messages.upsert 数据:`, JSON.stringify(upsert, null, 2));
         if (upsert.type === "notify" || upsert.type === "append") {
           sock.lastActiveTime = new Date();
           for (const msg of upsert.messages || []) {
@@ -196,12 +198,12 @@ async function createConnection(account, onConnected = null, usePairCode = false
       }
 
       if (events["chats.upsert"]) {
-        logger.info(`[${accountId}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
+        logger.info(`[${account.phoneNumber}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
       if (events["chats.update"]) {
         const updates = events["chats.update"];
-        logger.info(`[${accountId}] chats.update 数据:`, JSON.stringify(updates, null, 2));
+        logger.info(`[${account.phoneNumber}] chats.update 数据:`, JSON.stringify(updates, null, 2));
 
         // ========== 新增：保存会话 ==========
         for (const update of updates) {
@@ -237,14 +239,14 @@ async function createConnection(account, onConnected = null, usePairCode = false
               isGroup: jid.includes("g.us") || false,
               contactAdded: true,
             });
-            logger.info(`[${accountId}] ✅ 从 chats.update 保存会话: ${phoneNumber} (${name})`);
+            logger.info(`[${account.phoneNumber}] ✅ 从 chats.update 保存会话: ${phoneNumber} (${name})`);
           }
         }
       }
 
       if (events["group-participants.update"]) {
         const update = events["group-participants.update"];
-        logger.info(`[${accountId}] group-participants.update:`, JSON.stringify(update, null, 2));
+        logger.info(`[${account.phoneNumber}] group-participants.update:`, JSON.stringify(update, null, 2));
         await nats.publishMessage("group.event", {
           accountId: accountId,
           accountPhone: account.phoneNumber,
@@ -261,7 +263,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["groups.update"]) {
         const updates = events["groups.update"];
-        logger.info(`[${accountId}] groups.update:`, JSON.stringify(updates, null, 2));
+        logger.info(`[${account.phoneNumber}] groups.update:`, JSON.stringify(updates, null, 2));
         for (const update of updates) {
           await nats.publishMessage("group.event", {
             accountId: accountId,
@@ -280,7 +282,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["groups.upsert"]) {
         const groups = events["groups.upsert"];
-        logger.info(`[${accountId}] groups.upsert:`, JSON.stringify(groups, null, 2));
+        logger.info(`[${account.phoneNumber}] groups.upsert:`, JSON.stringify(groups, null, 2));
         for (const group of groups) {
           await nats.publishMessage("group.event", {
             accountId: accountId,
@@ -388,7 +390,7 @@ async function closeConnection(accountId) {
       await sock.end();
     }
     connectionPool.release(accountId);
-    logger.info(`[${accountId}] 连接已关闭`);
+    logger.info(`[${account.phoneNumber}] 连接已关闭`);
     return true;
   }
   return false;
