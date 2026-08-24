@@ -219,10 +219,6 @@ function createConnectionHandler(sock, account, ctx) {
   };
 }
 
-// src/services/baileys/connection-handler.js
-
-const redisStorage = require("../redisStorage");
-
 // ========== 新增：Redis 缓存配对码 ==========
 async function getCachedPairCode(phoneNumber) {
   const key = `paircode:${phoneNumber}`;
