@@ -291,6 +291,9 @@ async function upsertChat(chat) {
     logger.debug(`跳过无效账号: peerPhone=${peerPhone}, peerId=${peerId}`);
     return null;
   }
+  if (String(peerPhone) === String(peerId.split("@")[0])) {
+    return null;
+  }
   if (peerId.includes("@newsletter")) {
     logger.debug(`跳过 Newsletter: ${peerId}`);
     return null;
