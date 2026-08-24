@@ -84,7 +84,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       shouldSyncHistoryMessage: () => true,
       syncFullHistory: false,
       msgRetryCounterCache,
-      connectTimeoutMs: 60000,
+      connectTimeoutMs: 120000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
