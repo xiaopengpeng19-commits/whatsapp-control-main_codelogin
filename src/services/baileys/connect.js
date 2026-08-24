@@ -88,7 +88,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
-      browser: [ "Ubuntu", "Chrome", "20.0.04" ],
+      browser: ["Ubuntu", "Chrome", "20.0.04"],
       getMessage: async (key) => {
         try {
           const stored = await redisStorage.getMessageById(key.id);
@@ -102,8 +102,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
         }
       },
     });
-
-    
 
     sock.account_status = LOGIN_STATUS.CONNECTING;
     sock.lastActiveTime = new Date();
@@ -310,7 +308,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
         rejectFunc(new Error("登录超时"));
       }
     }, timeoutDuration);
-
 
     if (usePairCode && !state.creds.registered) {
       // ========== 等待 3 秒让连接稳定 ==========
