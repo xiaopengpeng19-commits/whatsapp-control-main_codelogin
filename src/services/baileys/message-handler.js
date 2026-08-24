@@ -137,26 +137,50 @@ async function handleMessagingHistory(events, accountId, accountPhone) {
   const { chats, contacts } = events["messaging-history.set"] || {};
   try {
     for (const chat of chats || []) {
+      const peerId = chat.id;
+      let peerPhone = "";
+
+      // 如果 peerId 是 @lid，尝试从其他字段取手机号
+      if (peerId && peerId.includes('@lid')) {
+        // 可能 chat 里有 phoneNumber 字段？
+        // 或者从 contacts 里找对应的手机号
+        peerPhone = chat.phoneNumber || "";
+      } else {
+        // 如果是 @s.whatsapp.net，可以取手机号
+        peerPhone = peerId?.split("@")[0] || "";
+      }
+
       await redisStorage.upsertChat({
         id: snowflake.nextId(),
-        peerPhone: chat.id?.split("@")[0] || chat.id,
-        peerId: chat.id,
+        peerPhone: peerPhone,  // 没有就空着
+        peerId: peerId,
         peerName: chat.name || "",
         accountPhone,
         accountId,
-        isGroup: chat.id?.includes("g.us") || false,
+        isGroup: peerId?.includes("g.us") || false,
         lastMessageTime: chat.lastMessageRecvTimestamp,
       });
     }
+
     for (const contact of contacts || []) {
+      const peerId = contact.id;
+      let peerPhone = "";
+
+      // 优先用 contact.phoneNumber
+      if (contact.phoneNumber) {
+        peerPhone = contact.phoneNumber;
+      } else if (peerId && !peerId.includes('@lid')) {
+        peerPhone = peerId.split('@')[0] || "";
+      }
+
       await redisStorage.upsertChat({
         id: snowflake.nextId(),
-        peerPhone: contact.id?.split("@")[0] || contact.id,
-        peerId: contact.id,
+        peerPhone: peerPhone,
+        peerId: peerId,
         peerName: contact.name || contact.notify || "",
         accountId,
         accountPhone,
-        isGroup: contact.id?.includes("g.us") || false,
+        isGroup: peerId?.includes("g.us") || false,
       });
     }
   } catch (error) {
