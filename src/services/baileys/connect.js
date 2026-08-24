@@ -405,7 +405,7 @@ async function CloseConnection(idOrPhone) {
     return await closeConnection(account.id);
   }
   logger.warn(`[${idOrPhone}] 未找到对应的活动连接`);
-  return false;
+  return true;
 }
 
 // ==========================================
