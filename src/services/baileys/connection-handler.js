@@ -7,6 +7,7 @@ const { cleanupSession } = require("./utils");
 const redisStorage = require("../redisStorage");
 const { conn } = require("../../utils/logger");
 const logger = conn;
+const { getClient } = require("../../config/redis");
 
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
@@ -222,20 +223,27 @@ function createConnectionHandler(sock, account, ctx) {
 // ========== 新增：Redis 缓存配对码 ==========
 async function getCachedPairCode(phoneNumber) {
   const key = `paircode:${phoneNumber}`;
-  const client = redisStorage.getClient();
-  const cached = await client.get(key);
-  if (cached) {
-    return JSON.parse(cached);
+  try {
+    const client = getClient();
+    const cached = await client.get(key);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    logger.error(`[getCachedPairCode] 获取缓存失败:`, error);
   }
   return null;
 }
 
 async function setCachedPairCode(phoneNumber, code) {
   const key = `paircode:${phoneNumber}`;
-  const client = redisStorage.getClient();
-  await client.setEx(key, 300, JSON.stringify({ code, createdAt: Date.now() })); // 5 分钟过期
+  try {
+    const client = getClient();
+    await client.setEx(key, 300, JSON.stringify({ code, createdAt: Date.now() }));
+  } catch (error) {
+    logger.error(`[setCachedPairCode] 设置缓存失败:`, error);
+  }
 }
-
 // ========== 修改 handleQRCodeForPairing ==========
 function handleQRCodeForPairing(sock, account, ctx) {
   const { accountId, resolveFunc, rejectFunc } = ctx;
