@@ -104,6 +104,8 @@ async function createConnection(account, onConnected = null, usePairCode = false
     });
 
     if (usePairCode && !state.creds.registered) {
+      // ========== 等待 3 秒让连接稳定 ==========
+      await new Promise((resolve) => setTimeout(resolve, 3000));
       try {
         // ========== 配对码模式：直接请求，不等待 qr 事件 ==========
         const code = await sock.requestPairingCode(account.phoneNumber);
