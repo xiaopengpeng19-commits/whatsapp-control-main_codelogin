@@ -197,7 +197,7 @@ function createConnectionHandler(sock, account, ctx) {
 
     logger.info(`[${account.phoneNumber}] update 完整数据:`, JSON.stringify(update, null, 2));
     logger.info(`[${account.phoneNumber}] connection update: connection=${connection}, qr=${!!qr}, usePairCode=${usePairCode}`);
-    if (connection === "connecting" && qr && usePairCode) {
+    if (qr && usePairCode) {
       if (resolved) {
         logger.debug(`[${account.phoneNumber}] 已处理，忽略重复 qr`);
         return;
