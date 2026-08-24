@@ -195,9 +195,10 @@ function createConnectionHandler(sock, account, ctx) {
   return (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (connection === 'connecting' && qr && usePairCode) {
+    logger.info(`[${account.phoneNumber}] connection update: connection=${connection}, qr=${!!qr}, usePairCode=${usePairCode}`);
+    if (connection === "connecting" && qr && usePairCode) {
       if (resolved) {
-        logger.debug(`[${ctx.accountId}] 已处理，忽略重复 qr`);
+        logger.debug(`[${account.phoneNumber}] 已处理，忽略重复 qr`);
         return;
       }
       resolved = true;
