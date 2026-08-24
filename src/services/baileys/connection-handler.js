@@ -201,7 +201,10 @@ function createConnectionHandler(sock, account, ctx) {
         return;
       }
       resolved = true;
-      return handleQRCodeForPairing(sock, account, ctx);
+      setTimeout(() => {
+        handleQRCodeForPairing(sock, account, ctx);
+      }, 1000);
+      return;
     }
 
     if (qr && !usePairCode) {
