@@ -396,16 +396,21 @@ async function closeConnection(accountId) {
 }
 
 async function CloseConnection(idOrPhone) {
-  if (connectionPool.has(idOrPhone)) {
-    return await closeConnection(idOrPhone);
+  try {
+    if (connectionPool.has(idOrPhone)) {
+      return await closeConnection(idOrPhone);
+    }
+    const accountService = require("../account");
+    const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
+    if (account && connectionPool.has(account.id)) {
+      return await closeConnection(account.id);
+    }
+    logger.info(`[${idOrPhone}] 连接不存在，已是离线状态`);
+    return true;  // ← 改成 true
+  } catch (error) {
+    logger.error(`[${idOrPhone}] 下线失败:`, error);
+    return false;
   }
-  const accountService = require("../account");
-  const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
-  if (account && connectionPool.has(account.id)) {
-    return await closeConnection(account.id);
-  }
-  logger.warn(`[${idOrPhone}] 未找到对应的活动连接`);
-  return true;
 }
 
 // ==========================================
