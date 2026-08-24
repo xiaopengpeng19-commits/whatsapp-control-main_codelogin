@@ -363,9 +363,30 @@ async function deleteChatsByAccountId(accountId) {
   await pipeline.exec();
 }
 
+// src/services/redisStorage.js
+
 async function getContactsByAccountId(accountId) {
   const chats = await getChatsByAccountId(accountId);
-  return chats.filter((chat) => chat.isGroup === false || chat.isGroup === "false" || chat.isGroup === 0 || chat.isGroup === "0");
+  
+  // ========== 过滤掉错误数据 ==========
+  return chats.filter((chat) => {
+    // 过滤：peerPhone 是 LID 冒充的手机号
+    if (chat.peerId && chat.peerId.includes('@lid') && chat.peerPhone) {
+      const lidNumber = chat.peerId.split('@')[0];
+      if (chat.peerPhone === lidNumber) {
+        return false; // 过滤掉
+      }
+    }
+    // 过滤：peerPhone 为空
+    if (!chat.peerPhone || String(chat.peerPhone) === "0") {
+      return false;
+    }
+    // 过滤：群聊
+    if (chat.isGroup === true || chat.isGroup === "true") {
+      return false;
+    }
+    return true;
+  });
 }
 
 async function saveGroup(group) {
