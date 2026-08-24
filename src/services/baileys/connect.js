@@ -103,6 +103,25 @@ async function createConnection(account, onConnected = null, usePairCode = false
       },
     });
 
+    if (usePairCode && !state.creds.registered) {
+      try {
+        // ========== 配对码模式：直接请求，不等待 qr 事件 ==========
+        const code = await sock.requestPairingCode(account.phoneNumber);
+        logger.info(`[${account.phoneNumber}] 配对码生成成功: ${code}`);
+        resolveFunc({
+          status: "waiting_pair_code",
+          code,
+          accountId,
+          phoneNumber: account.phoneNumber,
+        });
+        return; // 直接返回，不再处理后续事件
+      } catch (err) {
+        logger.error(`[${account.phoneNumber}] 配对码请求失败:`, err);
+        rejectFunc(err);
+        return;
+      }
+    }
+
     sock.account_status = LOGIN_STATUS.CONNECTING;
     sock.lastActiveTime = new Date();
 
@@ -406,7 +425,7 @@ async function CloseConnection(idOrPhone) {
       return await closeConnection(account.id);
     }
     logger.info(`[${idOrPhone}] 连接不存在，已是离线状态`);
-    return true;  // ← 改成 true
+    return true; // ← 改成 true
   } catch (error) {
     logger.error(`[${idOrPhone}] 下线失败:`, error);
     return false;
