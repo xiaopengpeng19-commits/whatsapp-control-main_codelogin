@@ -39,45 +39,6 @@ async function updateAccountStatus(accountId, phoneNumber, accountStatus, socket
   }
 }
 
-// ========== 配对码模式 ==========
-function handleQRCodeForPairing(sock, account, ctx) {
-  const { accountId, resolveFunc, rejectFunc } = ctx;
-  const phoneNumber = account.phoneNumber;
-
-  logger.info(`[${phoneNumber}] QR码已生成，准备请求配对码`);
-
-  if (!phoneNumber) {
-    logger.error(`[${phoneNumber}] 配对码登录失败: 手机号为空`);
-    if (rejectFunc && typeof rejectFunc === "function") {
-      rejectFunc(new Error("配对码登录需要提供手机号"));
-    }
-    return;
-  }
-
-  sock
-    .requestPairingCode(phoneNumber)
-    .then((code) => {
-      logger.info(`[${phoneNumber}] 配对码生成成功: ${code}`);
-      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE, "disconnected");
-      if (resolveFunc && typeof resolveFunc === "function") {
-        resolveFunc({
-          status: "waiting_pair_code",
-          code,
-          accountId,
-          phoneNumber: account.phoneNumber,
-        });
-      }
-    })
-    .catch((err) => {
-      logger.error(`[${phoneNumber}] 请求配对码失败:`, err);
-      sock.account_status = LOGIN_STATUS.FAILED;
-      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
-      if (rejectFunc && typeof rejectFunc === "function") {
-        rejectFunc(err);
-      }
-    });
-}
-
 // ========== 二维码模式 ==========
 function handleQRCode(sock, account, qr, ctx) {
   const { accountId, resolveFunc } = ctx;
@@ -224,27 +185,27 @@ function handleConnectionOpen(sock, account, ctx) {
 
 // src/services/baileys/connection-handler.js
 
+// connection-handler.js
+
 function createConnectionHandler(sock, account, ctx) {
   const { usePairCode } = ctx;
-  let pairCodeRequested = false;  // ← 只请求一次
+  let resolved = false;
 
   return (update) => {
     const { connection, lastDisconnect, qr } = update;
-    logger.debug(`[${ctx.accountId}] 连接更新:`, update);
 
-    // ========== 配对码模式：只请求一次 ==========
     if (qr && usePairCode) {
-      if (!pairCodeRequested) {
-        pairCodeRequested = true;
-        return handleQRCodeForPairing(sock, account, ctx);
+      if (resolved) {
+        logger.debug(`[${ctx.accountId}] 已处理，忽略重复 qr`);
+        return;
       }
-      // 已经请求过，忽略后续的 qr 事件
-      logger.debug(`[${ctx.accountId}] 配对码已请求，跳过重复 qr 事件`);
-      return;
+      resolved = true;
+      return handleQRCodeForPairing(sock, account, ctx);
     }
 
-    // ========== 二维码模式 ==========
     if (qr && !usePairCode) {
+      if (resolved) return;
+      resolved = true;
       return handleQRCode(sock, account, qr, ctx);
     }
 
@@ -256,6 +217,101 @@ function createConnectionHandler(sock, account, ctx) {
       return handleConnectionOpen(sock, account, ctx);
     }
   };
+}
+
+// src/services/baileys/connection-handler.js
+
+const redisStorage = require("../redisStorage");
+
+// ========== 新增：Redis 缓存配对码 ==========
+async function getCachedPairCode(phoneNumber) {
+  const key = `paircode:${phoneNumber}`;
+  const client = redisStorage.getClient();
+  const cached = await client.get(key);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  return null;
+}
+
+async function setCachedPairCode(phoneNumber, code) {
+  const key = `paircode:${phoneNumber}`;
+  const client = redisStorage.getClient();
+  await client.setEx(key, 300, JSON.stringify({ code, createdAt: Date.now() })); // 5 分钟过期
+}
+
+// ========== 修改 handleQRCodeForPairing ==========
+function handleQRCodeForPairing(sock, account, ctx) {
+  const { accountId, resolveFunc, rejectFunc } = ctx;
+  const phoneNumber = account.phoneNumber;
+
+  // ========== 1. 先检查 Redis 缓存 ==========
+  getCachedPairCode(phoneNumber)
+    .then((cached) => {
+      if (cached) {
+        logger.info(`[${accountId}] 使用缓存的配对码: ${cached.code}`);
+        if (resolveFunc) {
+          resolveFunc({
+            status: "waiting_pair_code",
+            code: cached.code,
+            accountId,
+            phoneNumber: account.phoneNumber,
+          });
+        }
+        return;
+      }
+
+      // ========== 2. 没有缓存，请求新的 ==========
+      sock
+        .requestPairingCode(phoneNumber)
+        .then((code) => {
+          logger.info(`[${accountId}] 配对码生成成功: ${code}`);
+
+          // ========== 3. 存入 Redis，5 分钟过期 ==========
+          setCachedPairCode(phoneNumber, code).catch((err) => {
+            logger.error(`[${accountId}] 缓存配对码失败:`, err);
+          });
+
+          if (resolveFunc) {
+            resolveFunc({
+              status: "waiting_pair_code",
+              code,
+              accountId,
+              phoneNumber: account.phoneNumber,
+            });
+          }
+        })
+        .catch((err) => {
+          logger.error(`[${accountId}] 配对码请求失败:`, err);
+          if (rejectFunc) {
+            rejectFunc(err);
+          }
+        });
+    })
+    .catch((err) => {
+      logger.error(`[${accountId}] 检查缓存失败:`, err);
+      // 缓存失败，直接请求
+      sock
+        .requestPairingCode(phoneNumber)
+        .then((code) => {
+          logger.info(`[${accountId}] 配对码生成成功: ${code}`);
+          setCachedPairCode(phoneNumber, code).catch(() => {});
+          if (resolveFunc) {
+            resolveFunc({
+              status: "waiting_pair_code",
+              code,
+              accountId,
+              phoneNumber: account.phoneNumber,
+            });
+          }
+        })
+        .catch((err) => {
+          logger.error(`[${accountId}] 配对码请求失败:`, err);
+          if (rejectFunc) {
+            rejectFunc(err);
+          }
+        });
+    });
 }
 
 module.exports = {
