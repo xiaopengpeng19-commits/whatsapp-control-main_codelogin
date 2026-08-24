@@ -249,7 +249,7 @@ async function setCachedPairCode(phoneNumber, code) {
 // ========== 修改 handleQRCodeForPairing ==========
 function handleQRCodeForPairing(sock, account, ctx) {
   const { accountId, resolveFunc, rejectFunc } = ctx;
-  const phoneNumber = account.phoneNumber;
+  const phoneNumber = String(account.phoneNumber);
   logger.info(`[${phoneNumber}] 请求匹配码`);
   // ========== 1. 先检查 Redis 缓存 ==========
   getCachedPairCode(phoneNumber)
