@@ -330,7 +330,23 @@ async function getChatsByAccountId(accountId) {
       return parseObject(data);
     }),
   );
-  return chats.filter(Boolean);
+
+  // ========== 过滤掉错误数据 ==========
+  return chats.filter((chat) => {
+    if (!chat) return false;
+    // 过滤：peerPhone 是 LID 冒充的手机号
+    if (chat.peerId && chat.peerId.includes("@lid") && chat.peerPhone) {
+      const lidNumber = chat.peerId.split("@")[0];
+      if (chat.peerPhone === lidNumber) {
+        return false;
+      }
+    }
+    // 过滤：peerPhone 为空
+    if (!chat.peerPhone || String(chat.peerPhone) === "0") {
+      return false;
+    }
+    return true;
+  });
 }
 
 async function deleteChatsByAccountId(accountId) {
