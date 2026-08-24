@@ -222,16 +222,28 @@ function handleConnectionOpen(sock, account, ctx) {
   }
 }
 
+// src/services/baileys/connection-handler.js
+
 function createConnectionHandler(sock, account, ctx) {
   const { usePairCode } = ctx;
+  let pairCodeRequested = false;  // ← 只请求一次
+
   return (update) => {
     const { connection, lastDisconnect, qr } = update;
     logger.debug(`[${ctx.accountId}] 连接更新:`, update);
 
+    // ========== 配对码模式：只请求一次 ==========
     if (qr && usePairCode) {
-      return handleQRCodeForPairing(sock, account, ctx);
+      if (!pairCodeRequested) {
+        pairCodeRequested = true;
+        return handleQRCodeForPairing(sock, account, ctx);
+      }
+      // 已经请求过，忽略后续的 qr 事件
+      logger.debug(`[${ctx.accountId}] 配对码已请求，跳过重复 qr 事件`);
+      return;
     }
 
+    // ========== 二维码模式 ==========
     if (qr && !usePairCode) {
       return handleQRCode(sock, account, qr, ctx);
     }
