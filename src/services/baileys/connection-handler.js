@@ -245,7 +245,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
   getCachedPairCode(phoneNumber)
     .then((cached) => {
       if (cached) {
-        logger.info(`[${accountId}] 使用缓存的配对码: ${cached.code}`);
+        logger.info(`[${phoneNumber}] 使用缓存的配对码: ${cached.code}`);
         if (resolveFunc) {
           resolveFunc({
             status: "waiting_pair_code",
@@ -261,11 +261,11 @@ function handleQRCodeForPairing(sock, account, ctx) {
       sock
         .requestPairingCode(phoneNumber)
         .then((code) => {
-          logger.info(`[${accountId}] 配对码生成成功: ${code}`);
+          logger.info(`[${phoneNumber}] 配对码生成成功: ${code}`);
 
           // ========== 3. 存入 Redis，5 分钟过期 ==========
           setCachedPairCode(phoneNumber, code).catch((err) => {
-            logger.error(`[${accountId}] 缓存配对码失败:`, err);
+            logger.error(`[${phoneNumber}] 缓存配对码失败:`, err);
           });
 
           if (resolveFunc) {
@@ -278,19 +278,19 @@ function handleQRCodeForPairing(sock, account, ctx) {
           }
         })
         .catch((err) => {
-          logger.error(`[${accountId}] 配对码请求失败:`, err);
+          logger.error(`[${phoneNumber}] 配对码请求失败:`, err);
           if (rejectFunc) {
             rejectFunc(err);
           }
         });
     })
     .catch((err) => {
-      logger.error(`[${accountId}] 检查缓存失败:`, err);
+      logger.error(`[${phoneNumber}] 检查缓存失败:`, err);
       // 缓存失败，直接请求
       sock
         .requestPairingCode(phoneNumber)
         .then((code) => {
-          logger.info(`[${accountId}] 配对码生成成功: ${code}`);
+          logger.info(`[${phoneNumber}] 配对码生成成功: ${code}`);
           setCachedPairCode(phoneNumber, code).catch(() => {});
           if (resolveFunc) {
             resolveFunc({
@@ -302,7 +302,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
           }
         })
         .catch((err) => {
-          logger.error(`[${accountId}] 配对码请求失败:`, err);
+          logger.error(`[${phoneNumber}] 配对码请求失败:`, err);
           if (rejectFunc) {
             rejectFunc(err);
           }
