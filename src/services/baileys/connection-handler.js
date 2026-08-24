@@ -195,16 +195,13 @@ function createConnectionHandler(sock, account, ctx) {
   return (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr && usePairCode) {
+    if (connection === 'connecting' && qr && usePairCode) {
       if (resolved) {
         logger.debug(`[${ctx.accountId}] 已处理，忽略重复 qr`);
         return;
       }
       resolved = true;
-      setTimeout(() => {
-        handleQRCodeForPairing(sock, account, ctx);
-      }, 1000);
-      return;
+      return handleQRCodeForPairing(sock, account, ctx);
     }
 
     if (qr && !usePairCode) {
