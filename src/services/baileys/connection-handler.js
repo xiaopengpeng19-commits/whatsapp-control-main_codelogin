@@ -194,17 +194,14 @@ function createConnectionHandler(sock, account, ctx) {
 
   return (update) => {
     const { connection, lastDisconnect, qr } = update;
-
-    logger.info(`[${account.phoneNumber}] update 完整数据:`, JSON.stringify(update, null, 2));
-    logger.info(`[${account.phoneNumber}] connection update: connection=${connection}, qr=${!!qr}, usePairCode=${usePairCode}`);
-    if (qr && usePairCode) {
-      if (resolved) {
-        logger.debug(`[${account.phoneNumber}] 已处理，忽略重复 qr`);
-        return;
-      }
-      resolved = true;
-      return handleQRCodeForPairing(sock, account, ctx);
-    }
+    // if (usePairCode) {
+    //   if (resolved) {
+    //     logger.debug(`[${account.phoneNumber}] 已处理，忽略重复 qr`);
+    //     return;
+    //   }
+    //   resolved = true;
+    //   return handleQRCodeForPairing(sock, account, ctx);
+    // }
 
     if (qr && !usePairCode) {
       if (resolved) return;
