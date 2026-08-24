@@ -44,10 +44,10 @@ function handleQRCodeForPairing(sock, account, ctx) {
   const { accountId, resolveFunc, rejectFunc } = ctx;
   const phoneNumber = account.phoneNumber;
 
-  logger.info(`[${accountId}] QR码已生成，准备请求配对码`);
+  logger.info(`[${phoneNumber}] QR码已生成，准备请求配对码`);
 
   if (!phoneNumber) {
-    logger.error(`[${accountId}] 配对码登录失败: 手机号为空`);
+    logger.error(`[${phoneNumber}] 配对码登录失败: 手机号为空`);
     if (rejectFunc && typeof rejectFunc === "function") {
       rejectFunc(new Error("配对码登录需要提供手机号"));
     }
@@ -57,7 +57,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
   sock
     .requestPairingCode(phoneNumber)
     .then((code) => {
-      logger.info(`[${accountId}] 配对码生成成功: ${code}`);
+      logger.info(`[${phoneNumber}] 配对码生成成功: ${code}`);
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_PAIR_CODE, "disconnected");
       if (resolveFunc && typeof resolveFunc === "function") {
         resolveFunc({
@@ -69,7 +69,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
       }
     })
     .catch((err) => {
-      logger.error(`[${accountId}] 请求配对码失败:`, err);
+      logger.error(`[${phoneNumber}] 请求配对码失败:`, err);
       sock.account_status = LOGIN_STATUS.FAILED;
       updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
       if (rejectFunc && typeof rejectFunc === "function") {
@@ -81,7 +81,7 @@ function handleQRCodeForPairing(sock, account, ctx) {
 // ========== 二维码模式 ==========
 function handleQRCode(sock, account, qr, ctx) {
   const { accountId, resolveFunc } = ctx;
-  logger.info(`[${accountId}] QR码已生成`);
+  logger.info(`[${account.phoneNumber}] QR码已生成`);
   updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR, "disconnected");
   if (resolveFunc && typeof resolveFunc === "function") {
     resolveFunc({ status: "waiting_qr", qr, accountId });
