@@ -294,6 +294,9 @@ async function upsertChat(chat) {
   if (String(peerPhone) === String(peerId.split("@")[0])) {
     return null;
   }
+  if (peerPhone.includes("@s.whatsapp.net")) {
+    peerPhone = peerPhone.split("@")[0];
+  }
   if (peerId.includes("@newsletter")) {
     logger.debug(`跳过 Newsletter: ${peerId}`);
     return null;
@@ -367,12 +370,12 @@ async function deleteChatsByAccountId(accountId) {
 
 async function getContactsByAccountId(accountId) {
   const chats = await getChatsByAccountId(accountId);
-  
+
   // ========== 过滤掉错误数据 ==========
   return chats.filter((chat) => {
     // 过滤：peerPhone 是 LID 冒充的手机号
-    if (chat.peerId && chat.peerId.includes('@lid') && chat.peerPhone) {
-      const lidNumber = chat.peerId.split('@')[0];
+    if (chat.peerId && chat.peerId.includes("@lid") && chat.peerPhone) {
+      const lidNumber = chat.peerId.split("@")[0];
       if (chat.peerPhone === lidNumber) {
         return false; // 过滤掉
       }
