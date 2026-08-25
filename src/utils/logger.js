@@ -45,6 +45,8 @@ cleanOldLogs();
 // ========== 日志配置 ==========
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 
+// src/utils/logger.js
+
 const baseLogger = pino({
   level: LOG_LEVEL,
   transport: {
@@ -52,14 +54,18 @@ const baseLogger = pino({
       {
         target: "pino-pretty",
         options: {
-          colorize: true,
+          colorize: true, // ✅ 开启颜色
           translateTime: "SYS:standard",
           ignore: "pid,hostname",
           messageFormat: "[{module}] {msg}",
           destination: getLogFileName(),
           mkdir: true,
+          // ========== 按级别显示不同颜色 ==========
+          customColors: "info:blue,warn:yellow,error:red,debug:green",
+          // 或者更丰富的颜色
+          // customColors: 'info:blue,warn:yellow,error:red,debug:green,trace:magenta',
         },
-        level: "info",
+        level: LOG_LEVEL,
       },
     ],
   },
