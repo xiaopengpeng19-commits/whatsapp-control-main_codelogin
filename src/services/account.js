@@ -402,12 +402,20 @@ class AccountService {
   // src/services/account.js
 
   // ========== AddContact（单人添加） ==========
+  // src/services/account.js
+
   async AddContact(idorphone, body) {
     try {
-      const { phone, displayName } = body;
+      const { phone, jid, displayName } = body;
 
-      if (!phone) {
-        return { code: 400, message: "phone is required", data: null };
+      // 必须传 jid（LID 格式，如 48894612390012@lid）
+      if (!jid) {
+        return { code: 400, message: "jid is required (e.g. 48894612390012@lid)", data: null };
+      }
+
+      // 验证 jid 格式
+      if (!jid.includes("@")) {
+        return { code: 400, message: "jid must include @ (e.g. 48894612390012@lid)", data: null };
       }
 
       const sock = await getConnection(idorphone);
@@ -415,42 +423,36 @@ class AccountService {
         return { code: 500, message: "账号未连接", data: null };
       }
 
-      let jid = phone;
-      // if (!jid.includes("@")) {
-      //   jid = `${phone}@s.whatsapp.net`;
-      // }
-
-      // 调用官方 addOrEditContact（同步到 WhatsApp 服务器）
+      // 使用云控传入的 jid
       await sock.addOrEditContact(jid, {
-        displayName: displayName || phone,
-        name: displayName || phone,
-        phoneNumber: phone,
+        displayName: displayName || phone || jid.split("@")[0],
+        name: displayName || phone || jid.split("@")[0],
+        phoneNumber: phone || jid.split("@")[0],
       });
 
       // 保存到 Redis
       await redisStorage.upsertChat({
         accountId: idorphone,
         accountPhone: idorphone,
-        peerPhone: phone,
+        peerPhone: phone || jid.split("@")[0],
         peerId: jid,
-        peerName: displayName || phone,
+        peerName: displayName || phone || jid.split("@")[0],
         isGroup: false,
         contactAdded: true,
       });
 
-      logger.info(`[AddContact] 已添加联系人: ${phone} -> ${jid}`);
+      logger.info(`[AddContact] 已添加联系人: ${jid}`);
 
       return {
         code: 200,
         message: "联系人添加成功",
-        data: { phone, jid, displayName: displayName || phone },
+        data: { jid, phone, displayName: displayName || phone || jid.split("@")[0] },
       };
     } catch (error) {
       logger.error(`[AddContact] 添加联系人失败:`, error);
       return { code: 500, message: error.message, data: null };
     }
   }
-
   // ========== AddContactsBatch（批量添加） ==========
   async AddContactsBatch(idorphone, body) {
     try {
