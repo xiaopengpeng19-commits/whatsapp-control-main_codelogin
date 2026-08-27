@@ -416,9 +416,9 @@ class AccountService {
       }
 
       let jid = phone;
-      if (!jid.includes("@")) {
-        jid = `${phone}@s.whatsapp.net`;
-      }
+      // if (!jid.includes("@")) {
+      //   jid = `${phone}@s.whatsapp.net`;
+      // }
 
       // 调用官方 addOrEditContact（同步到 WhatsApp 服务器）
       await sock.addOrEditContact(jid, {
