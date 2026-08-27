@@ -76,7 +76,7 @@ async function cmdpoll() {
     Query: (Account, Body) => accountService.Query.call(accountService, Account, Body),
     BindProxy: (Account, Body) => accountService.BindProxy.call(accountService, Account, Body),
     ContactsList: (Account, Body) => accountService.ContactsList.call(accountService, Account, Body),
-    AddContacts: (Account, Body) => accountService.AddContacts.call(accountService, Account, Body),
+    AddContact: (Account, Body) => accountService.AddContact.call(accountService, Account, Body),
     AddContactsBatch: (Account, Body) => accountService.AddContactsBatch.call(accountService, Account, Body),
     SendTextMsg: (Account, Body) => messageService.SendTextMsg.call(messageService, Account, Body),
     SendImageMsg: (Account, Body) => messageService.SendImageMsg.call(messageService, Account, Body),

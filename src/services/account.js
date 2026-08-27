@@ -399,29 +399,126 @@ class AccountService {
       return { code: 500, message: error.message, data: null };
     }
   }
-  // services/account.js
+  // src/services/account.js
 
-  // ========== AddContacts - 只添加联系人 ==========
-  // services/account.js
+  // ========== AddContact（单人添加） ==========
+  async AddContact(idorphone, body) {
+    try {
+      const { phone, displayName } = body;
 
-  // ========== AddContacts - 返回错误提示 ==========
-  async AddContacts(idorphone, body) {
-    logger.warn(`[AddContacts] 功能已禁用: ${JSON.stringify(body)}`);
-    return {
-      code: 400,
-      message: "添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
-      data: null,
-    };
+      if (!phone) {
+        return { code: 400, message: "phone is required", data: null };
+      }
+
+      const sock = await getConnection(idorphone);
+      if (!sock) {
+        return { code: 500, message: "账号未连接", data: null };
+      }
+
+      let jid = phone;
+      if (!jid.includes("@")) {
+        jid = `${phone}@s.whatsapp.net`;
+      }
+
+      // 调用官方 addOrEditContact（同步到 WhatsApp 服务器）
+      await sock.addOrEditContact(jid, {
+        displayName: displayName || phone,
+        name: displayName || phone,
+        phoneNumber: phone,
+      });
+
+      // 保存到 Redis
+      await redisStorage.upsertChat({
+        accountId: idorphone,
+        accountPhone: idorphone,
+        peerPhone: phone,
+        peerId: jid,
+        peerName: displayName || phone,
+        isGroup: false,
+        contactAdded: true,
+      });
+
+      logger.info(`[AddContact] 已添加联系人: ${phone} -> ${jid}`);
+
+      return {
+        code: 200,
+        message: "联系人添加成功",
+        data: { phone, jid, displayName: displayName || phone },
+      };
+    } catch (error) {
+      logger.error(`[AddContact] 添加联系人失败:`, error);
+      return { code: 500, message: error.message, data: null };
+    }
   }
 
-  // ========== AddContactsBatch - 返回错误提示 ==========
+  // ========== AddContactsBatch（批量添加） ==========
   async AddContactsBatch(idorphone, body) {
-    logger.warn(`[AddContactsBatch] 功能已禁用: ${JSON.stringify(body)}`);
-    return {
-      code: 400,
-      message: "批量添加联系人功能已禁用，请通过 WhatsApp 手机端或发送消息的方式添加联系人",
-      data: null,
-    };
+    try {
+      const { phones, displayName } = body;
+      const phoneList = Array.isArray(phones) ? phones : [phones];
+
+      if (!phoneList || phoneList.length === 0) {
+        return { code: 400, message: "phones is required", data: null };
+      }
+
+      const sock = await getConnection(idorphone);
+      if (!sock) {
+        return { code: 500, message: "账号未连接", data: null };
+      }
+
+      const CONCURRENCY = 5;
+      const results = [];
+
+      for (let i = 0; i < phoneList.length; i += CONCURRENCY) {
+        const chunk = phoneList.slice(i, i + CONCURRENCY);
+        const chunkResults = await Promise.all(
+          chunk.map(async (phone) => {
+            try {
+              let jid = phone;
+              if (!jid.includes("@")) {
+                jid = `${phone}@s.whatsapp.net`;
+              }
+
+              await sock.addOrEditContact(jid, {
+                displayName: displayName || phone,
+                name: displayName || phone,
+                phoneNumber: phone,
+              });
+
+              await redisStorage.upsertChat({
+                accountId: idorphone,
+                accountPhone: idorphone,
+                peerPhone: phone,
+                peerId: jid,
+                peerName: displayName || phone,
+                isGroup: false,
+                contactAdded: true,
+              });
+
+              return { phone, success: true, jid };
+            } catch (error) {
+              logger.error(`[AddContactsBatch] 添加 ${phone} 失败:`, error.message);
+              return { phone, success: false, error: error.message };
+            }
+          }),
+        );
+
+        results.push(...chunkResults);
+        if (i + CONCURRENCY < phoneList.length) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length;
+      return {
+        code: 200,
+        message: `批量添加完成，成功 ${successCount}/${results.length} 个`,
+        data: { results },
+      };
+    } catch (error) {
+      logger.error(`[AddContactsBatch] 批量添加失败:`, error);
+      return { code: 500, message: error.message, data: null };
+    }
   }
 
   async GetPhoneCode(idorphone) {
