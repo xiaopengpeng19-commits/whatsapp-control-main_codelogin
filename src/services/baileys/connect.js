@@ -88,7 +88,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
-      browser: Browsers.appropriate("WhatsApp"),//["Ubuntu", "Chrome", "20.0.04"],
+      browser: ["Ubuntu", "Chrome", "20.0.04"],
       getMessage: async (key) => {
         try {
           const stored = await redisStorage.getMessageById(key.id);
@@ -309,24 +309,24 @@ async function createConnection(account, onConnected = null, usePairCode = false
       }
     }, timeoutDuration);
 
-    // if (usePairCode && !state.creds.registered) {
-    //   // ========== 等待 3 秒让连接稳定 ==========
-    //   await new Promise((resolve) => setTimeout(resolve, 1000));
-    //   try {
-    //     // ========== 配对码模式：直接请求，不等待 qr 事件 ==========
-    //     const code = await sock.requestPairingCode(account.phoneNumber);
-    //     logger.info(`[${account.phoneNumber}] 配对码生成成功: ${code}`);
-    //     resolveFunc({
-    //       status: "waiting_pair_code",
-    //       code,
-    //       accountId,
-    //       phoneNumber: account.phoneNumber,
-    //     });
-    //   } catch (err) {
-    //     logger.error(`[${account.phoneNumber}] 配对码请求失败:`, err);
-    //     rejectFunc(err);
-    //   }
-    // }
+    if (usePairCode && !state.creds.registered) {
+      // ========== 等待 3 秒让连接稳定 ==========
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        // ========== 配对码模式：直接请求，不等待 qr 事件 ==========
+        const code = await sock.requestPairingCode(account.phoneNumber);
+        logger.info(`[${account.phoneNumber}] 配对码生成成功: ${code}`);
+        resolveFunc({
+          status: "waiting_pair_code",
+          code,
+          accountId,
+          phoneNumber: account.phoneNumber,
+        });
+      } catch (err) {
+        logger.error(`[${account.phoneNumber}] 配对码请求失败:`, err);
+        rejectFunc(err);
+      }
+    }
 
     const result = await loginPromise;
     clearTimeout(timeoutId);

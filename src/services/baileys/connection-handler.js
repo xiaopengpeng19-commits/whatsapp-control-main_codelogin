@@ -79,7 +79,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     ctx._resolved = true;
     logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
-    createConnection(account, onConnected, true)
+    createConnection(account, onConnected, false)
       .then((result) => {
         if (result?.status === "connected") {
           if (resolveFunc && typeof resolveFunc === "function") {

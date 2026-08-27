@@ -56,7 +56,7 @@ class AccountService {
         }
       };
 
-      const result = await createConnection(account, callbackfun, true);
+      const result = await createConnection(account, callbackfun, false);
 
       if (result.status === 500) {
         throw new Error("cant connect to whatsapp server");
