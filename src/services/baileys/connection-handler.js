@@ -190,7 +190,6 @@ function handleConnectionOpen(sock, account, ctx) {
       accountPhone: phoneNumber,
       accountStatus: "normal",
       socketStatus: "connected",
-      eventType: "account.online",
       timestamp: new Date().toISOString(),
     });
     logger.info(`[${accountId}] ✅ 上线通知已推送给云控`);
