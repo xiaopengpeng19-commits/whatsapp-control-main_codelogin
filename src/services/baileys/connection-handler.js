@@ -182,6 +182,21 @@ function handleConnectionOpen(sock, account, ctx) {
       phoneNumber: account.phoneNumber,
     });
   }
+  // ========== 新增：推送给云控 ==========
+  try {
+    const nats = require("../../config/nats");
+    nats.publishMessage("connection", {
+      accountId: accountId,
+      accountPhone: phoneNumber,
+      accountStatus: "normal",
+      socketStatus: "connected",
+      eventType: "account.online",
+      timestamp: new Date().toISOString(),
+    });
+    logger.info(`[${accountId}] ✅ 上线通知已推送给云控`);
+  } catch (error) {
+    logger.error(`[${accountId}] ❌ 推送上线通知失败:`, error);
+  }
 }
 
 // src/services/baileys/connection-handler.js
