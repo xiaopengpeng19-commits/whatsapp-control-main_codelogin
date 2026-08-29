@@ -301,9 +301,21 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
     const timeoutDuration = usePairCode ? 60000 : 120000;
     const timeoutId = setTimeout(() => {
-      baileysLogger.error(`[${account.phoneNumber}] 登录超时`);
-      sock.account_status = LOGIN_STATUS.FAILED;
-      updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "connected");
+      logger.error(`[${account.phoneNumber}] 登录超时`);
+
+      // ========== 不要随意修改账号状态 ==========
+      // 检查账号是否真的在线
+      const isActuallyOnline = sock.user && sock.user.id;
+
+      if (!isActuallyOnline) {
+        // 只有确认不在线时，才修改状态
+        sock.account_status = LOGIN_STATUS.FAILED;
+        updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
+      } else {
+        // 账号实际上还在线，只记录超时日志，不修改状态
+        logger.warn(`[${account.phoneNumber}] 登录超时，但账号仍在线`);
+      }
+
       if (rejectFunc && typeof rejectFunc === "function") {
         rejectFunc(new Error("登录超时"));
       }
