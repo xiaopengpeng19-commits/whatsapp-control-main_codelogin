@@ -121,7 +121,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
     sock.ev.process(async (events) => {
       const eventKeys = Object.keys(events);
       if (eventKeys.length > 0) {
-        logger.info(`[${account.phoneNumber}] 触发事件:`, eventKeys);
+        logger.info(`[${account.phoneNumber}] 触发事件: ${JSON.stringify(eventKeys)}`);
       }
 
       if (events["creds.update"]) {
