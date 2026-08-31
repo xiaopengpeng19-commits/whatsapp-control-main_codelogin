@@ -9,6 +9,25 @@ const { conn } = require("../../utils/logger");
 const logger = conn;
 const { getClient } = require("../../config/redis");
 
+// src/services/baileys/connection-handler.js
+
+// ========== 在文件顶部添加辅助函数 ==========
+async function notifyCloud(accountId, phoneNumber, socketStatus, accountStatus) {
+  try {
+    const nats = require("../../config/nats");
+    await nats.publishMessage("connection", {
+      accountId: accountId,
+      accountPhone: phoneNumber,
+      socketStatus: socketStatus,
+      accountStatus: accountStatus,
+      updatedAt: new Date().toISOString(),
+    });
+    logger.info(`[${accountId}] ✅ 状态已推送给云控: ${socketStatus}`);
+  } catch (error) {
+    logger.error(`[${accountId}] ❌ 推送失败:`, error);
+  }
+}
+
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
     logger.info(
@@ -106,8 +125,18 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 401/403：凭证失效
   if (statusCode === 401 || statusCode === 403) {
-    logger.warn(`[${accountId}] 凭证已失效 (${statusCode})，彻底清理账号数据`);
+    if (statusCode === 401) {
+      logger.warn(`[${accountId}] 凭证已过期 (401)，彻底清理账号数据`);
+      notifyCloud(accountId, account.phoneNumber, "disconnected", "expired");
+      // 清理数据...
+    }
 
+    // 403：账号被封禁
+    if (statusCode === 403) {
+      logger.warn(`[${accountId}] 账号被封禁 (403)，彻底清理账号数据`);
+      notifyCloud(accountId, account.phoneNumber, "disconnected", "banned");
+      // 清理数据...
+    }
     setImmediate(async () => {
       try {
         const redisStorage = require("../redisStorage");
@@ -135,6 +164,8 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 其他错误
   logger.warn(`[${accountId}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
+  notifyCloud(accountId, account.phoneNumber, "disconnected", "offline"); // ✅ 新增
+
   if (rejectFunc && typeof rejectFunc === "function") {
     const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
     err.code = statusCode || 500;
