@@ -137,22 +137,6 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
       notifyCloud(accountId, account.phoneNumber, "disconnected", "banned");
       // 清理数据...
     }
-    setImmediate(async () => {
-      try {
-        const redisStorage = require("../redisStorage");
-        await redisStorage.deleteAccount(accountId);
-        logger.info(`[${accountId}] 已从 Redis 删除`);
-        const sessionDir = require("path").join(process.env.STORAGE_PATH || "./storage/sessions", String(accountId));
-        const fs = require("fs");
-        if (fs.existsSync(sessionDir)) {
-          fs.rmSync(sessionDir, { recursive: true, force: true });
-          logger.info(`[${accountId}] 已删除会话目录: ${sessionDir}`);
-        }
-      } catch (error) {
-        logger.error(`[${accountId}] 清理账号数据失败:`, error);
-      }
-    });
-
     if (rejectFunc && typeof rejectFunc === "function") {
       const err = new Error(`凭证已失效，请重新登录 (${statusCode})`);
       err.code = statusCode;

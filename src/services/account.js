@@ -511,12 +511,22 @@ class AccountService {
     }
   }
 
-  async DeleteAccount(id) {
-    const account = await this.getAccountByPhoneNumberOrId(id);
+  // src/services/account.js
+
+  async DeleteAccount(idorphone) {
+    // 只有云控主动调用时才删除
+    const account = await this.getAccountByPhoneNumberOrId(idorphone);
     if (!account) {
       return { code: 404, message: "account not found", data: null };
     }
+
     await redisStorage.deleteAccount(account.id);
+    // 删除会话文件
+    const sessionDir = path.join("./storage/sessions", String(account.id));
+    if (fs.existsSync(sessionDir)) {
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+    }
+
     return { code: 200, message: "success", data: null };
   }
 
