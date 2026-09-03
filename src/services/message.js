@@ -7,13 +7,14 @@ const logger = msg;
 const { Buffer } = require("node:buffer");
 const { delay } = require("../utils/common");
 const { sendButtons } = require("malvin-btns");
-
+const { fileTypeFromBuffer } = require("file-type");
+const axios = require("axios");
 function normalizeJid(jid) {
   if (!jid) return jid;
-  
+
   // 已经有 @ 了，直接返回（群ID或个人ID都包含 @）
   if (jid.includes("@")) return jid;
-  
+
   // 纯数字 → 私聊
   return `${jid}@s.whatsapp.net`;
 }
@@ -95,32 +96,102 @@ class MessageService {
     }
   }
 
-  /**
-   * Send image message - 统一返回格式
-   */
+  // src/services/message.js
+
   async SendImageMsg(idorphone, data) {
     try {
       const { To, Base64Content, Caption, DeleteForMe } = data;
+
+      if (!To) {
+        return { code: 400, message: "To is required", data: null };
+      }
+      if (!Base64Content) {
+        return { code: 400, message: "Base64Content is required", data: null };
+      }
+
       const sock = await getConnection(idorphone);
       if (!sock) {
         return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
       }
-      const media = Buffer.from(Base64Content, "base64");
-      let response = await this.sendMessageWTyping(sock, To, {
-        image: media,
-        caption: Caption,
-        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
-      });
+
+      // ========== 1. 获取图片 Buffer ==========
+      let imageBuffer;
+      let mimeType = "image/jpeg";
+
+      // 判断是 URL 还是 Base64
+      if (Base64Content.startsWith("http://") || Base64Content.startsWith("https://")) {
+        // 是 URL，下载图片
+        try {
+          const response = await axios.get(Base64Content, {
+            responseType: "arraybuffer",
+            timeout: 30000,
+          });
+          imageBuffer = Buffer.from(response.data);
+          mimeType = response.headers["content-type"] || "image/jpeg";
+        } catch (downloadError) {
+          logger.error(`[SendImageMsg] 下载图片失败:`, downloadError);
+          return { code: 400, message: "图片下载失败: " + downloadError.message, data: null };
+        }
+      } else {
+        // 是 Base64，解码
+        try {
+          imageBuffer = Buffer.from(Base64Content, "base64");
+        } catch (decodeError) {
+          logger.error(`[SendImageMsg] Base64 解码失败:`, decodeError);
+          return { code: 400, message: "Base64 解码失败", data: null };
+        }
+      }
+
+      // ========== 2. 验证图片数据 ==========
+      if (imageBuffer.length < 100) {
+        return { code: 400, message: "图片数据无效或太小", data: null };
+      }
+
+      // 检测图片格式
+      try {
+        const fileType = await fileTypeFromBuffer(imageBuffer);
+        if (fileType && fileType.mime.startsWith("image/")) {
+          mimeType = fileType.mime;
+        }
+      } catch (typeError) {
+        logger.warn(`[SendImageMsg] 无法检测图片格式:`, typeError);
+      }
+
+      // ========== 3. 发送图片 ==========
+      const targetJid = normalizeJid(To);
+      await sock.presenceSubscribe(targetJid);
+      await delay(500);
+      await sock.sendPresenceUpdate("composing", targetJid);
+      await delay(500);
+
+      const message = {
+        image: imageBuffer,
+        caption: Caption || "",
+        mimetype: mimeType,
+      };
+
+      // 如果是 GIF，作为视频发送
+      if (mimeType === "image/gif") {
+        message.gifPlayback = true;
+      }
+
+      const response = await sock.sendMessage(targetJid, message);
+
+      logger.info(`[SendImageMsg] 图片发送成功: ${targetJid}`);
+
       return {
         code: 200,
         message: "success",
         data: {
           to: To,
           messageId: response.key.id,
+          mimeType: mimeType,
         },
       };
     } catch (error) {
-      return { code: 500, message: error.message, data: { to: To } };
+      logger.error(`[SendImageMsg] 发送图片失败:`, error);
+      const to = data?.To || "";
+      return { code: 500, message: error.message, data: { to: to } };
     }
   }
 
