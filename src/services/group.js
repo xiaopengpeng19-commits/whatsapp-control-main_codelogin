@@ -696,6 +696,53 @@ class GroupService {
   }
   // src/services/group.js
 
+  // ========== 通过邀请链接获取群组信息 ==========
+  async GetGroupInviteInfo(accountId, body) {
+    try {
+      const { inviteCode } = body || {};
+
+      if (!inviteCode) {
+        return { code: 400, message: "inviteCode is required", data: null };
+      }
+
+      // 提取纯邀请码（如果传入完整链接）
+      let code = inviteCode;
+      if (inviteCode.includes("https://chat.whatsapp.com/")) {
+        code = inviteCode.split("/").pop();
+      }
+
+      // 获取连接
+      const sock = await getConnection(accountId);
+      if (!sock) {
+        return { code: 500, message: "账号未连接", data: null };
+      }
+
+      // 获取群组信息
+      const groupInfo = await sock.groupGetInviteInfo(code);
+
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          groupId: groupInfo.id,
+          groupName: groupInfo.subject,
+          size: groupInfo.size,
+          owner: groupInfo.owner,
+          description: groupInfo.desc || "",
+          participantsCount: groupInfo.participants?.length || 0,
+          isCommunity: groupInfo.isCommunity || false,
+        },
+      };
+    } catch (error) {
+      logger.error(`[GetGroupInviteInfo] 失败:`, error);
+      return {
+        code: 500,
+        message: error.message || "获取群组信息失败",
+        data: null,
+      };
+    }
+  }
+
   /**
    * 设置群组全员禁言（仅管理员可发言）
    * @param {string} accountId - 账号ID

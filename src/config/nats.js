@@ -86,6 +86,7 @@ async function cmdpoll() {
     SendLinkMessage: (Account, Body) => messageService.SendLinkMessage.call(messageService, Account, Body),
     ImportAccount: (Account, Body) => accountService.ImportAccount.call(accountService, Account, Body),
 
+    GetGroupInviteInfo: (Account, Body) => groupService.GetGroupInviteInfo.call(groupService, Account, Body),
     GetGroupInfo: (Account, Body) => groupService.GetGroupInfo.call(groupService, Account, Body),
     GetGroupList: (Account, Body) => groupService.GetGroupList.call(groupService, Account, Body),
     GroupParticipantsUpdate: (Account, Body) => groupService.GroupParticipantsUpdate.call(groupService, Account, Body),
