@@ -98,15 +98,14 @@ class MessageService {
 
   // src/services/message.js
 
+  // src/services/message.js
+
   async SendImageMsg(idorphone, data) {
     try {
-      const { To, Base64Content, Caption, DeleteForMe } = data;
+      const { To, ImageUrl, Base64Content, Caption, DeleteForMe } = data;
 
       if (!To) {
         return { code: 400, message: "To is required", data: null };
-      }
-      if (!Base64Content) {
-        return { code: 400, message: "Base64Content is required", data: null };
       }
 
       const sock = await getConnection(idorphone);
@@ -114,68 +113,28 @@ class MessageService {
         return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
       }
 
-      // ========== 1. 获取图片 Buffer ==========
-      let imageBuffer;
-      let mimeType = "image/jpeg";
-
-      // 判断是 URL 还是 Base64
-      if (Base64Content.startsWith("http://") || Base64Content.startsWith("https://")) {
-        // 是 URL，下载图片
-        try {
-          const response = await axios.get(Base64Content, {
-            responseType: "arraybuffer",
-            timeout: 30000,
-          });
-          imageBuffer = Buffer.from(response.data);
-          mimeType = response.headers["content-type"] || "image/jpeg";
-        } catch (downloadError) {
-          logger.error(`[SendImageMsg] 下载图片失败:`, downloadError);
-          return { code: 400, message: "图片下载失败: " + downloadError.message, data: null };
-        }
+      // ========== 构建图片消息 ==========
+      let image;
+      if (ImageUrl) {
+        // 方式1：云控传 URL（推荐）
+        image = { url: ImageUrl };
+      } else if (Base64Content) {
+        // 方式2：云控传 Base64（兼容旧方式）
+        image = Buffer.from(Base64Content, "base64");
       } else {
-        // 是 Base64，解码
-        try {
-          imageBuffer = Buffer.from(Base64Content, "base64");
-        } catch (decodeError) {
-          logger.error(`[SendImageMsg] Base64 解码失败:`, decodeError);
-          return { code: 400, message: "Base64 解码失败", data: null };
-        }
+        return { code: 400, message: "ImageUrl or Base64Content is required", data: null };
       }
 
-      // ========== 2. 验证图片数据 ==========
-      if (imageBuffer.length < 100) {
-        return { code: 400, message: "图片数据无效或太小", data: null };
-      }
-
-      // 检测图片格式
-      try {
-        const fileType = await fileTypeFromBuffer(imageBuffer);
-        if (fileType && fileType.mime.startsWith("image/")) {
-          mimeType = fileType.mime;
-        }
-      } catch (typeError) {
-        logger.warn(`[SendImageMsg] 无法检测图片格式:`, typeError);
-      }
-
-      // ========== 3. 发送图片 ==========
       const targetJid = normalizeJid(To);
       await sock.presenceSubscribe(targetJid);
       await delay(500);
       await sock.sendPresenceUpdate("composing", targetJid);
       await delay(500);
 
-      const message = {
-        image: imageBuffer,
+      const response = await sock.sendMessage(targetJid, {
+        image: image,
         caption: Caption || "",
-        mimetype: mimeType,
-      };
-
-      // 如果是 GIF，作为视频发送
-      if (mimeType === "image/gif") {
-        message.gifPlayback = true;
-      }
-
-      const response = await sock.sendMessage(targetJid, message);
+      });
 
       logger.info(`[SendImageMsg] 图片发送成功: ${targetJid}`);
 
@@ -185,7 +144,6 @@ class MessageService {
         data: {
           to: To,
           messageId: response.key.id,
-          mimeType: mimeType,
         },
       };
     } catch (error) {
