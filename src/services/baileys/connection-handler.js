@@ -73,11 +73,7 @@ function handleQRCode(sock, account, qr, ctx) {
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected, connectionPool } = ctx;
 
-  logger.info(`[${account.phoneNumber}] ========== 连接关闭 ==========`);
-  logger.info(`[${account.phoneNumber}] statusCode: ${statusCode}`);
-  logger.info(`[${account.phoneNumber}] isManualClose: ${isManualClose}`);
-  logger.info(`[${account.phoneNumber}] error: ${lastDisconnect?.error?.message || '无'}`);
-
+  
   if (ctx._resolved) {
     logger.debug(`[${account.phoneNumber}] 连接已处理，跳过重复关闭事件`);
     return;
@@ -86,6 +82,13 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
 
+
+  logger.info(`[${account.phoneNumber}] ========== 连接关闭 ==========`);
+  logger.info(`[${account.phoneNumber}] statusCode: ${statusCode}`);
+  logger.info(`[${account.phoneNumber}] isManualClose: ${isManualClose}`);
+  logger.info(`[${account.phoneNumber}] error: ${lastDisconnect?.error?.message || '无'}`);
+
+  
   // 手动关闭
   if (isManualClose) {
     logger.info(`[${account.phoneNumber}] 手动关闭连接`);
