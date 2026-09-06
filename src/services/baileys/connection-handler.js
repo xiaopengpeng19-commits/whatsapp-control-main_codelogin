@@ -74,7 +74,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected, connectionPool } = ctx;
 
   if (ctx._resolved) {
-    logger.debug(`[${accountId}] 连接已处理，跳过重复关闭事件`);
+    logger.debug(`[${account.phoneNumber}] 连接已处理，跳过重复关闭事件`);
     return;
   }
 
@@ -83,7 +83,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 手动关闭
   if (isManualClose) {
-    logger.info(`[${accountId}] 手动关闭连接`);
+    logger.info(`[${account.phoneNumber}] 手动关闭连接`);
     if (rejectFunc && typeof rejectFunc === "function") {
       const err = new Error("手动关闭");
       err.code = 200;
@@ -96,7 +96,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   // 515 重启
   if (statusCode === 515) {
     ctx._resolved = true;
-    logger.info(`[${accountId}] 配对码登录成功，需要重启连接 (515)`);
+    logger.info(`[${account.phoneNumber}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
     createConnection(account, onConnected, false)
       .then((result) => {
@@ -126,14 +126,14 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   // 401/403：凭证失效
   if (statusCode === 401 || statusCode === 403) {
     if (statusCode === 401) {
-      logger.warn(`[${accountId}] 凭证已过期 (401)，彻底清理账号数据`);
+      logger.warn(`[${account.phoneNumber}] 凭证已过期 (401)，彻底清理账号数据`);
       notifyCloud(accountId, account.phoneNumber, "disconnected", "expired");
       // 清理数据...
     }
 
     // 403：账号被封禁
     if (statusCode === 403) {
-      logger.warn(`[${accountId}] 账号被封禁 (403)，彻底清理账号数据`);
+      logger.warn(`[${account.phoneNumber}] 账号被封禁 (403)，彻底清理账号数据`);
       notifyCloud(accountId, account.phoneNumber, "disconnected", "banned");
       // 清理数据...
     }
@@ -147,8 +147,8 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   }
 
   // 其他错误
-  logger.warn(`[${accountId}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
-  notifyCloud(accountId, account.phoneNumber, "disconnected", "offline"); // ✅ 新增
+  logger.warn(`[${account.phoneNumber}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
+  notifyCloud(accountId, account.phoneNumber, "connected", "offline"); // ✅ 新增
 
   if (rejectFunc && typeof rejectFunc === "function") {
     const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
