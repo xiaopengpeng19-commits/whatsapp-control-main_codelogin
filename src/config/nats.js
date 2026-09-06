@@ -11,10 +11,10 @@ let natsConnection = null;
 // src/config/nats.js
 
 async function connectNats() {
-  console.log('📡 [nats] connectNats 开始');
-  
+  console.log("📡 [nats] connectNats 开始");
+
   try {
-    console.log('📡 [nats] 连接选项中...');
+    console.log("📡 [nats] 连接选项中...");
     // 使用分离的认证参数避免 URL 编码问题
     const connectionOptions = {
       servers: process.env.NATS_HOST || "127.0.0.1:4222",
@@ -24,31 +24,31 @@ async function connectNats() {
       reconnect: true,
       maxReconnectAttempts: -1,
     };
-    console.log('📡 [nats] 连接选项:', connectionOptions);
+    console.log("📡 [nats] 连接选项:", connectionOptions);
 
-    console.log('📡 [nats] 正在连接 NATS...');
+    console.log("📡 [nats] 正在连接 NATS...");
     natsConnection = await connect(connectionOptions);
-    console.log('📡 [nats] connect() 返回了');
+    console.log("📡 [nats] connect() 返回了");
 
     logger.info("Connected to NATS server");
-    console.log('📡 [nats] 连接成功，准备执行 cmdpoll...');
+    console.log("📡 [nats] 连接成功，准备执行 cmdpoll...");
 
     // 等待连接完全建立后再设置订阅
-    console.log('📡 [nats] 调用 cmdpoll...');
+    console.log("📡 [nats] 调用 cmdpoll...");
     await cmdpoll();
-    console.log('📡 [nats] cmdpoll 完成');
+    console.log("📡 [nats] cmdpoll 完成");
 
     // Setup disconnect handler
     natsConnection.closed().then(() => {
       logger.info("NATS connection closed");
       natsConnection = null;
     });
-    console.log('📡 [nats] disconnect handler 已设置');
+    console.log("📡 [nats] disconnect handler 已设置");
 
-    console.log('📡 [nats] connectNats 返回');
+    console.log("📡 [nats] connectNats 返回");
     return natsConnection;
   } catch (error) {
-    console.log('📡 [nats] 连接失败:', error.message);
+    console.log("📡 [nats] 连接失败:", error.message);
     logger.error("Failed to connect to NATS:", error);
     return null;
   }
@@ -96,6 +96,10 @@ async function cmdpoll() {
     GetGroupInviteCode: (Account, Body) => groupService.GetGroupInviteCode.call(groupService, Account, Body),
     JoinGroupByInvite: (Account, Body) => groupService.JoinGroupByInvite.call(groupService, Account, Body),
     SetGroupAnnounce: (Account, Body) => groupService.SetGroupAnnounce.call(groupService, Account, Body || {}),
+
+    UpdateProfileName: (Account, Body) => accountService.UpdateProfileName.call(accountService, Account, Body),
+    UpdateProfilePicture: (Account, Body) => accountService.UpdateProfilePicture.call(accountService, Account, Body),
+    UpdateProfileStatus: (Account, Body) => accountService.UpdateProfileStatus.call(accountService, Account, Body),
   };
 
   logger.info("cmdssubscribe");

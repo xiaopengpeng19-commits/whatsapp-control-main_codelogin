@@ -218,7 +218,88 @@ class AccountService {
       data: null,
     };
   }
+  // src/services/account.js
 
+  // ========== 修改昵称 ==========
+  async UpdateProfileName(idorphone, body) {
+    try {
+      const { name } = body;
+      if (!name) {
+        return { code: 400, message: "name is required", data: null };
+      }
+
+      const sock = await getConnection(idorphone);
+      if (!sock) {
+        return { code: 500, message: "账号未连接", data: null };
+      }
+
+      await sock.updateProfileName(name);
+      logger.info(`[${idorphone}] 昵称已更新为: ${name}`);
+
+      return { code: 200, message: "昵称更新成功", data: { name } };
+    } catch (error) {
+      logger.error(`[UpdateProfileName] 失败:`, error);
+      return { code: 500, message: error.message, data: null };
+    }
+  }
+
+  // src/services/account.js
+
+  // ========== 修改头像（支持 URL 和 Base64） ==========
+  async UpdateProfilePicture(idorphone, body) {
+    try {
+      const { imageUrl, base64Content } = body;
+
+      if (!imageUrl && !base64Content) {
+        return { code: 400, message: "imageUrl or base64Content is required", data: null };
+      }
+
+      const sock = await getConnection(idorphone);
+      if (!sock) {
+        return { code: 500, message: "账号未连接", data: null };
+      }
+
+      // ========== 构建图片数据 ==========
+      let image;
+      if (imageUrl) {
+        image = { url: imageUrl };
+      } else {
+        image = Buffer.from(base64Content, "base64");
+      }
+
+      // 更新头像
+      await sock.updateProfilePicture(sock.user.id, image);
+      logger.info(`[${idorphone}] 头像已更新`);
+
+      return { code: 200, message: "头像更新成功", data: null };
+    } catch (error) {
+      logger.error(`[UpdateProfilePicture] 失败:`, error);
+      return { code: 500, message: error.message, data: null };
+    }
+  }
+
+  // ========== 修改个人简介 ==========
+  async UpdateProfileStatus(idorphone, body) {
+    try {
+      const { status } = body;
+      if (!status) {
+        return { code: 400, message: "status is required", data: null };
+      }
+
+      const sock = await getConnection(idorphone);
+      if (!sock) {
+        return { code: 500, message: "账号未连接", data: null };
+      }
+
+      await sock.updateProfileStatus(status);
+      logger.info(`[${idorphone}] 简介已更新为: ${status}`);
+
+      return { code: 200, message: "简介更新成功", data: { status } };
+    } catch (error) {
+      logger.error(`[UpdateProfileStatus] 失败:`, error);
+      return { code: 500, message: error.message, data: null };
+    }
+  }
   // src/services/account.js - getPairCode 方法
 
   async getPairCode(account, callbackurl) {
