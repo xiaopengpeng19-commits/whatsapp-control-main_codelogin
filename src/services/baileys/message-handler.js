@@ -65,12 +65,12 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
         if (keys.length > 0) {
           try {
             await sock.readMessages(keys);
-            logger.info(`[${accountId}] 批量已读 ${keys.length} 条消息, 会话: ${chatId}`);
+            logger.info(`[${accountPhone}] 批量已读 ${keys.length} 条消息, 会话: ${chatId}`);
             for (const key of keys) {
               await redisStorage.updateMessageStatus(key.id, "read");
             }
           } catch (error) {
-            logger.error(`[${accountId}] 批量已读失败:`, error);
+            logger.error(`[${accountPhone}] 批量已读失败:`, error);
           }
           queue.keys = [];
         }
@@ -78,7 +78,7 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       }, delay);
     }
   } catch (error) {
-    logger.error(`[${accountId}] 处理消息失败:`, error);
+    logger.error(`[${accountPhone}] 处理消息失败:`, error);
   }
 }
 
