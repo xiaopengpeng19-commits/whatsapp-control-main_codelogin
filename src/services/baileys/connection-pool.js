@@ -12,6 +12,27 @@ class ConnectionPool {
     this.isShuttingDown = false;
   }
 
+  // ========== 从连接中提取手机号 ==========
+  _getPhoneFromConnection(connection, accountId) {
+    try {
+      let phone = accountId;
+      if (connection?.user?.id) {
+        phone = connection.user.id.split("@")[0].split(":")[0];
+      } else if (connection?.auth?.creds?.me?.id) {
+        phone = connection.auth.creds.me.id.split("@")[0].split(":")[0];
+      }
+      // 提取纯数字
+      if (phone && !/^\d+$/.test(phone)) {
+        const match = phone.match(/\d+/);
+        if (match) phone = match[0];
+      }
+      return phone || accountId;
+    } catch {
+      return accountId;
+    }
+  }
+
+  // ========== 获取连接 ==========
   async acquire(accountId, createFn) {
     // 1. 检查是否已存在连接
     if (this.connections.has(accountId)) {
@@ -38,37 +59,25 @@ class ConnectionPool {
     return this._createConnection(accountId, createFn);
   }
 
+  // ========== 创建连接 ==========
   async _createConnection(accountId, createFn) {
     try {
       const connection = await createFn();
+      const phone = this._getPhoneFromConnection(connection, accountId);
 
-      // ✅ 推送 NATS
+      // 推送 NATS
       try {
         const nats = require("../../config/nats");
-        let accountPhone = accountId;
-        if (connection?.user?.id) {
-          accountPhone = connection.user.id.split("@")[0].split(":")[0];
-        } else if (connection?.auth?.creds?.me?.id) {
-          accountPhone = connection.auth.creds.me.id.split("@")[0].split(":")[0];
-        }
-
-        if (accountPhone && !/^\d+$/.test(accountPhone)) {
-          const match = accountPhone.match(/\d+/);
-          if (match) {
-            accountPhone = match[0];
-          }
-        }
-
         await nats.publishMessage("connection", {
           accountId: accountId,
-          accountPhone: accountPhone,
+          accountPhone: phone,
           accountStatus: "normal",
           socketStatus: "connected",
           updatedAt: new Date().toISOString(),
         });
-        logger.info(`[连接池] ✅ connection 事件已推送 (accountId: ${accountId}, phone: ${accountPhone})`);
+        logger.info(`[连接池] ✅ connection 事件已推送 (phone: ${phone})`);
       } catch (natsErr) {
-        logger.error(`[连接池] ❌ 推送失败: ${accountId}`, natsErr);
+        logger.error(`[连接池] ❌ 推送失败 (phone: ${phone})`, natsErr);
       }
 
       this.connections.set(accountId, {
@@ -76,28 +85,33 @@ class ConnectionPool {
         lastUsed: Date.now(),
         createdAt: Date.now(),
         accountId,
+        phone, // 保存 phone 用于后续日志
       });
 
-      logger.info(`[连接池] 创建连接: ${accountId}，当前: ${this.connections.size}/${this.maxSize}`);
+      logger.info(`[连接池] 创建连接: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
       this._processQueue();
 
       return connection;
     } catch (error) {
-      logger.error(`[连接池] 创建连接失败: ${accountId}`, error);
+      logger.error(`[连接池] 创建连接失败 (accountId: ${accountId})`, error);
       throw error;
     }
   }
 
+  // ========== 释放连接 ==========
   release(accountId) {
     if (this.connections.has(accountId)) {
+      const entry = this.connections.get(accountId);
+      const phone = entry?.phone || accountId;
       this.connections.delete(accountId);
-      logger.info(`[连接池] 释放连接: ${accountId}，当前: ${this.connections.size}/${this.maxSize}`);
+      logger.info(`[连接池] 释放连接: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
       this._processQueue();
       return true;
     }
     return false;
   }
 
+  // ========== 处理等待队列 ==========
   _processQueue() {
     if (this.pendingQueue.length === 0) return;
     if (this.connections.size >= this.maxSize) return;
@@ -113,22 +127,27 @@ class ConnectionPool {
     }
   }
 
+  // ========== 获取连接池大小 ==========
   size() {
     return this.connections.size;
   }
 
+  // ========== 获取队列大小 ==========
   queueSize() {
     return this.pendingQueue.length;
   }
 
+  // ========== 检查连接是否存在 ==========
   has(accountId) {
     return this.connections.has(accountId);
   }
 
+  // ========== 获取连接 ==========
   get(accountId) {
     return this.connections.get(accountId)?.connection || null;
   }
 
+  // ========== 清理空闲连接 ==========
   evictIdle() {
     const now = Date.now();
     let evicted = 0;
@@ -136,12 +155,13 @@ class ConnectionPool {
     for (const [accountId, entry] of this.connections) {
       if (now - entry.lastUsed > this.idleTimeout) {
         const sock = entry.connection;
+        const phone = entry?.phone || accountId;
         if (sock && sock.end) {
           sock.end().catch(() => {});
         }
         this.connections.delete(accountId);
         evicted++;
-        logger.info(`[连接池] 清理空闲连接: ${accountId}，已闲置 ${(now - entry.lastUsed) / 60000} 分钟`);
+        logger.info(`[连接池] 清理空闲连接: ${phone}，已闲置 ${(now - entry.lastUsed) / 60000} 分钟`);
       }
     }
 
@@ -156,14 +176,17 @@ class ConnectionPool {
     return evicted;
   }
 
+  // ========== 清空所有连接 ==========
   async clear() {
     logger.info(`[连接池] 清空所有连接...`);
     for (const [accountId, entry] of this.connections) {
       try {
         const sock = entry.connection;
+        const phone = entry?.phone || accountId;
         if (sock && sock.end) {
           await sock.end();
         }
+        logger.info(`[连接池] 已关闭连接: ${phone}`);
       } catch (error) {
         logger.error(`[连接池] 关闭连接失败: ${accountId}`, error);
       }
@@ -172,16 +195,22 @@ class ConnectionPool {
     this.pendingQueue = [];
     logger.info(`[连接池] 清空完成`);
   }
+
+  // ========== 手动设置连接 ==========
   set(accountId, sock) {
+    const phone = this._getPhoneFromConnection(sock, accountId);
     this.connections.set(accountId, {
       connection: sock,
       lastUsed: Date.now(),
       createdAt: Date.now(),
       accountId: accountId,
+      phone: phone,
     });
-    logger.info(`[连接池] 添加连接: ${accountId}，当前: ${this.connections.size}/${this.maxSize}`);
+    logger.info(`[连接池] 添加连接: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
     this._processQueue();
   }
+
+  // ========== 检查连接健康状态 ==========
   isHealthy(accountId) {
     const entry = this.connections.get(accountId);
     if (!entry) return false;
