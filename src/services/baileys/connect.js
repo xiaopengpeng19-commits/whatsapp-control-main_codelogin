@@ -460,11 +460,8 @@ function getAllConnections() {
 // 空闲清理
 // ==========================================
 async function intervalStopIdelConnection() {
-  const evicted = connectionPool.evictIdle();
-  if (evicted > 0) {
-    logger.info(`清理 ${evicted} 个空闲连接`);
-  }
-  return evicted;
+  const idleCount = connectionPool.evictIdle();  // 只记录，不断开
+  return idleCount;
 }
 
 // ==========================================
