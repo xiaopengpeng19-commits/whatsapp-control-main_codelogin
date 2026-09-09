@@ -114,7 +114,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
       onConnected,
       saveCreds,
       connectionPool, // ✅ 传入 connectionPool
-      _resolved: false,
     };
     const connectionHandler = createConnectionHandler(sock, account, ctx);
 

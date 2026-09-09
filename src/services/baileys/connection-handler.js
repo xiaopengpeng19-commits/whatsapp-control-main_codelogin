@@ -74,10 +74,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected, connectionPool } = ctx;
 
   
-  if (ctx._resolved) {
-    logger.debug(`[${account.phoneNumber}] 连接已处理，跳过重复关闭事件`);
-    return;
-  }
+  
 
   const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
@@ -103,7 +100,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 515 重启
   if (statusCode === 515) {
-    ctx._resolved = true;
+    
     logger.info(`[${account.phoneNumber}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
     createConnection(account, onConnected, false)
@@ -170,12 +167,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 function handleConnectionOpen(sock, account, ctx) {
   const { accountId, resolveFunc, onConnected, connectionPool } = ctx;
 
-  if (ctx._resolved) {
-    logger.debug(`[${accountId}] 连接已处理，跳过重复打开事件`);
-    return;
-  }
-  ctx._resolved = true;
-
+  
   sock._manualClose = false;
 
   let phoneNumber = account.phoneNumber;
