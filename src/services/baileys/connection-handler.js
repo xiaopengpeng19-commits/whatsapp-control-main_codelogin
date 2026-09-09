@@ -248,6 +248,7 @@ function createConnectionHandler(sock, account, ctx) {
     }
 
     if (connection === "close") {
+      logger.info(`[${account.phoneNumber}] ========== 连接关闭 ==========`);
       return handleConnectionClose(sock, account, lastDisconnect, ctx);
     }
 
