@@ -153,7 +153,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 其他错误
   logger.warn(`[${account.phoneNumber}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
-  notifyCloud(accountId, account.phoneNumber, "connected", "offline"); // ✅ 新增
+  notifyCloud(accountId, account.phoneNumber, "connected", "failed"); // ✅ 新增
 
   if (rejectFunc && typeof rejectFunc === "function") {
     const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
