@@ -73,19 +73,14 @@ function handleQRCode(sock, account, qr, ctx) {
 function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected, connectionPool } = ctx;
 
-  
-  
-
   const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
-
 
   logger.info(`[${account.phoneNumber}] ========== 连接关闭 ==========`);
   logger.info(`[${account.phoneNumber}] statusCode: ${statusCode}`);
   logger.info(`[${account.phoneNumber}] isManualClose: ${isManualClose}`);
-  logger.info(`[${account.phoneNumber}] error: ${lastDisconnect?.error?.message || '无'}`);
+  logger.info(`[${account.phoneNumber}] error: ${lastDisconnect?.error?.message || "无"}`);
 
-  
   // 手动关闭
   if (isManualClose) {
     logger.info(`[${account.phoneNumber}] 手动关闭连接`);
@@ -100,7 +95,6 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 515 重启
   if (statusCode === 515) {
-    
     logger.info(`[${account.phoneNumber}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
     createConnection(account, onConnected, false)
@@ -130,20 +124,23 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 401/403：凭证失效
   if (statusCode === 401 || statusCode === 403) {
-    if (statusCode === 401) {
-      logger.warn(`[${account.phoneNumber}] 凭证已过期 (401)，彻底清理账号数据`);
-      notifyCloud(accountId, account.phoneNumber, "disconnected", "expired");
-      // 清理数据...
+    const statusMsg = statusCode === 401 ? "expired" : "banned";
+    const statusText = statusCode === 401 ? "凭证过期" : "账号封禁";
+
+    logger.warn(`[${account.phoneNumber}] ${statusText} (${statusCode})`);
+
+    // 1. 推送状态
+    notifyCloud(accountId, account.phoneNumber, "disconnected", statusMsg);
+
+    // 2. 从连接池释放（不调用 sock.end()，因为连接已经断了）
+    if (connectionPool && connectionPool.has(accountId)) {
+      connectionPool.release(accountId);
+      logger.info(`[${account.phoneNumber}] 已从连接池释放`);
     }
 
-    // 403：账号被封禁
-    if (statusCode === 403) {
-      logger.warn(`[${account.phoneNumber}] 账号被封禁 (403)，彻底清理账号数据`);
-      notifyCloud(accountId, account.phoneNumber, "disconnected", "banned");
-      // 清理数据...
-    }
+    // 3. 直接返回，不调用 CloseConnection
     if (rejectFunc && typeof rejectFunc === "function") {
-      const err = new Error(`凭证已失效，请重新登录 (${statusCode})`);
+      const err = new Error(`${statusText}，请重新登录 (${statusCode})`);
       err.code = statusCode;
       err.type = "CREDENTIALS_EXPIRED";
       rejectFunc(err);
@@ -154,7 +151,9 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   // 其他错误
   logger.warn(`[${account.phoneNumber}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
   notifyCloud(accountId, account.phoneNumber, "connected", "failed"); // ✅ 新增
-
+  if (connectionPool && connectionPool.has(accountId)) {
+    connectionPool.release(accountId);
+  }
   if (rejectFunc && typeof rejectFunc === "function") {
     const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
     err.code = statusCode || 500;
@@ -167,7 +166,6 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 function handleConnectionOpen(sock, account, ctx) {
   const { accountId, resolveFunc, onConnected, connectionPool } = ctx;
 
-  
   sock._manualClose = false;
 
   let phoneNumber = account.phoneNumber;
