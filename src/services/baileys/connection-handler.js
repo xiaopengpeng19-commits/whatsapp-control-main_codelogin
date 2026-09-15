@@ -186,7 +186,8 @@ function handleConnectionOpen(sock, account, ctx) {
 
   sock.account_status = LOGIN_STATUS.CONNECTED;
   sock.lastActiveTime = new Date();
-
+  sock._closeHandled = false;
+  
   updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED, "connected");
   connectionPool.set(accountId, sock); // ✅ 使用 connectionPool
 
