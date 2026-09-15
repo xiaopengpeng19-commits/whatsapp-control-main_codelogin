@@ -301,10 +301,14 @@ async function upsertChat(chat) {
     logger.debug(`跳过 Newsletter: ${peerId}`);
     return null;
   }
+
   // ========== 正常保存 ==========
   const chatKey = getChatKey(chat.accountId, chat.peerId);
   const existingData = await client.hGetAll(chatKey);
   const existingChat = parseObject(existingData) || {};
+
+  // ========== 判断新增还是更新 ==========
+  const isNew = !existingChat.id;
 
   await client.sAdd(getAccountChatsSetKey(chat.accountId), chat.peerId);
 
@@ -317,6 +321,26 @@ async function upsertChat(chat) {
   };
 
   await client.hSet(chatKey, flattenObject(updatedChat));
+
+  // ========== 推送 contact.event 给云控 ==========
+  try {
+    await nats.publishMessage("contact.event", {
+      accountId: chat.accountId,
+      accountPhone: chat.accountPhone || chat.accountId,
+      eventType: isNew ? "contact.upsert" : "contact.update",
+      data: {
+        peerPhone: updatedChat.peerPhone,
+        peerId: updatedChat.peerId,
+        peerName: updatedChat.peerName,
+        isGroup: false,
+      },
+      timestamp: new Date().toISOString(),
+    });
+    logger.info(`[upsertChat] ✅ 联系人事件已推送: ${isNew ? "新增" : "更新"} ${updatedChat.peerPhone}`);
+  } catch (err) {
+    logger.error(`[upsertChat] ❌ 推送失败:`, err);
+  }
+
   return updatedChat;
 }
 
