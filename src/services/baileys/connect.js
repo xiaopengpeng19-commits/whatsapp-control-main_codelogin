@@ -385,30 +385,6 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
 }
 
 // ==========================================
-// 通知推送
-// ==========================================
-async function notifyConnection(identifier, sock) {
-  console.log(`📡 [notifyConnection] 开始推送: ${identifier}`);
-  try {
-    const nats = require("../../config/nats");
-    const accountPhone = sock.user?.id?.split("@")[0]?.split(":")[0] || identifier;
-    console.log(`📡 [notifyConnection] 准备推送: accountId=${identifier}, phone=${accountPhone}`);
-    await nats.publishMessage("connection", {
-      accountId: identifier,
-      accountPhone: accountPhone,
-      accountStatus: "normal",
-      socketStatus: "connected",
-      updatedAt: new Date().toISOString(),
-    });
-    logger.info(`[${identifier}] ✅ 账号在线已推送 (phone: ${accountPhone})`);
-    console.log(`✅ [notifyConnection] 推送成功: ${accountPhone}`);
-  } catch (err) {
-    console.log(`❌ [notifyConnection] 推送失败: ${identifier}`, err);
-    logger.error(`[${identifier}] ❌ 推送失败:`, err);
-  }
-}
-
-// ==========================================
 // 关闭连接
 // ==========================================
 async function closeConnection(accountId) {
