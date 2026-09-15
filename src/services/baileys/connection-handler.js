@@ -81,8 +81,17 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   logger.info(`[${account.phoneNumber}] isManualClose: ${isManualClose}`);
   logger.info(`[${account.phoneNumber}] error: ${lastDisconnect?.error?.message || "无"}`);
 
+  if (sock._closeHandled) {
+    logger.debug(`[${account.phoneNumber}] 已处理关闭事件，跳过`);
+    return;
+  }
+  sock._closeHandled = true;
   // 手动关闭
   if (isManualClose) {
+    if (connectionPool && connectionPool.has(accountId)) {
+      connectionPool.release(accountId);
+      logger.info(`[${account.phoneNumber}] 已从连接池释放`);
+    }
     logger.info(`[${account.phoneNumber}] 手动关闭连接`);
     if (rejectFunc && typeof rejectFunc === "function") {
       const err = new Error("手动关闭");
