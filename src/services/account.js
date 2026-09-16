@@ -614,7 +614,7 @@ class AccountService {
         logger.info(`[${idorphone}] 更新 proxy: ${useProxy}`);
       }
 
-      const connection = await getConnection(idorphone, null, useProxy);
+      const connection = await getConnection(idorphone, null, useProxy, true);
       if (connection) {
         return { code: 200, message: "online", data: null };
       } else {
