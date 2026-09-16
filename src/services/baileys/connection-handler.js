@@ -179,10 +179,10 @@ function handleConnectionOpen(sock, account, ctx) {
   // ========== 打印 platform ==========
   try {
     const { isWABusinessPlatform } = require("@whiskeysockets/baileys");
-    console.log(`[${account.phoneNumber}] creds.platform:`, sock.authState.creds.platform);
-    console.log(`[${account.phoneNumber}] isWABusinessPlatform:`, isWABusinessPlatform(sock.authState.creds.platform));
+    logger.info(`[${account.phoneNumber}] creds.platform: ${sock.authState.creds.platform}`);
+    logger.info(`[${account.phoneNumber}] isWABusinessPlatform: ${isWABusinessPlatform(sock.authState.creds.platform)}`);
   } catch (err) {
-    console.log(`[${account.phoneNumber}] 检测 platform 失败:`, err.message);
+    logger.error(`[${account.phoneNumber}] 检测 platform 失败: ${err.message}`);
   }
   let phoneNumber = account.phoneNumber;
   if (!phoneNumber && sock.user?.id) {
