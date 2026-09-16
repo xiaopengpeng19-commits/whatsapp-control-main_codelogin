@@ -8,6 +8,59 @@ const redisStorage = require("./redisStorage");
 const path = require("path");
 const fs = require("fs");
 class AccountService {
+  // ========== 获取账号平台类型 ==========
+  async GetAccountPlatform(idorphone, body) {
+    try {
+      // 1. 获取账号信息
+      const account = await this.getAccountByPhoneNumberOrId(idorphone);
+      if (!account) {
+        return { code: 404, message: "账号不存在", data: null };
+      }
+
+      // 2. 读取 creds.json
+      const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(account.id));
+      const credsPath = path.join(sessionDir, "creds.json");
+
+      if (!fs.existsSync(credsPath)) {
+        return { code: 404, message: "凭证文件不存在", data: null };
+      }
+
+      // 3. 解析 creds.json
+      let creds;
+      try {
+        creds = JSON.parse(fs.readFileSync(credsPath, "utf8"));
+      } catch (parseErr) {
+        return { code: 500, message: "凭证文件解析失败", data: null };
+      }
+
+      const platform = creds.platform || null;
+
+      // 4. 判断是否商业号
+      let isBusiness = false;
+      if (platform) {
+        try {
+          const { isWABusinessPlatform } = require("@whiskeysockets/baileys");
+          isBusiness = isWABusinessPlatform(platform);
+        } catch (e) {
+          // 忽略
+        }
+      }
+
+      return {
+        code: 200,
+        message: "success",
+        data: {
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          platform: platform,
+          isBusiness: isBusiness,
+        },
+      };
+    } catch (error) {
+      logger.error(`[GetAccountPlatform] 失败:`, error);
+      return { code: 500, message: error.message, data: null };
+    }
+  }
   /**
    * 使用手机号码登录 WhatsApp
    */

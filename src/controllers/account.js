@@ -6,6 +6,7 @@ const fs = require("fs");
 const snowflake = require("../utils/snowflake");
 const axios = require("axios");
 const { getConnection } = require("../services/baileys/connect");
+const path = require("path");
 
 class AccountController {
   /**
@@ -376,7 +377,7 @@ class AccountController {
       };
     }
   }
-
+  
   // src/controllers/account.js - exportAccount 方法
 
   async exportAccount(ctx) {
