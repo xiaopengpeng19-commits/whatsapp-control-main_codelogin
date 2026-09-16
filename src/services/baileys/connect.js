@@ -351,7 +351,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
 // ==========================================
 // 获取连接
 // ==========================================
-async function getConnection(identifier, callback = null, proxyOverride = null) {
+async function getConnection(identifier, callback = null, proxyOverride = null, force = false) {
   const accountService = require("../account");
 
   // 1. 检查连接池
@@ -363,10 +363,19 @@ async function getConnection(identifier, callback = null, proxyOverride = null) 
     connectionPool.release(identifier);
   }
 
+  if (!force) {
+    return null;
+  }
+
   // 2. 从 Redis 获取账号
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
     logger.error(`[${identifier}] 账号不存在`);
+    return null;
+  }
+
+  if (account.account_status === "expired" || account.account_status === "banned") {
+    logger.warn(`[${identifier}] 账号已失效 (${account.account_status})，跳过`);
     return null;
   }
 
@@ -435,7 +444,7 @@ function getAllConnections() {
 // 空闲清理
 // ==========================================
 async function intervalStopIdelConnection() {
-  const idleCount = connectionPool.evictIdle();  // 只记录，不断开
+  const idleCount = connectionPool.evictIdle(); // 只记录，不断开
   return idleCount;
 }
 

@@ -501,7 +501,7 @@ class AccountService {
       }
 
       // ========== 创建连接（传入 proxy） ==========
-      const connection = await getConnection(idorphone, null, useProxy);
+      const connection = await getConnection(idorphone, null, useProxy, true);
       if (connection) {
         return { code: 200, message: "online", data: null };
       } else {
