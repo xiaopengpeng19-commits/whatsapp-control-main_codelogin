@@ -354,26 +354,28 @@ async function createConnection(account, onConnected = null, usePairCode = false
 async function getConnection(identifier, callback = null, proxyOverride = null, force = false) {
   const accountService = require("../account");
 
-  // 1. 检查连接池
-  if (connectionPool.has(identifier)) {
-    const sock = connectionPool.get(identifier);
-    if (sock?.user) {
-      return sock;
-    }
-    connectionPool.release(identifier);
-  }
-
-  if (!force) {
-    return null;
-  }
-
-  // 2. 从 Redis 获取账号
+  // ========== 先获取账号，拿到 accountId ==========
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
     logger.error(`[${identifier}] 账号不存在`);
     return null;
   }
 
+  // ========== 用 accountId 查连接池 ==========
+  if (connectionPool.has(account.id)) {
+    const sock = connectionPool.get(account.id);
+    if (sock?.user) {
+      return sock;
+    }
+    connectionPool.release(account.id);
+  }
+
+  // 连接池没有
+  if (!force) {
+    return null;
+  }
+
+  // 检查账号状态
   if (account.account_status === "expired" || account.account_status === "banned") {
     logger.warn(`[${identifier}] 账号已失效 (${account.account_status})，跳过`);
     return null;
@@ -383,7 +385,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     account.proxy = proxyOverride;
   }
 
-  // 3. 使用连接池获取连接
+  // 创建连接
   return connectionPool.acquire(account.id, async () => {
     const result = await createConnection(account, callback);
     if (result?.status === "connected") {
