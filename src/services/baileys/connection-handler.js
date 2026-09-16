@@ -176,7 +176,14 @@ function handleConnectionOpen(sock, account, ctx) {
   const { accountId, resolveFunc, onConnected, connectionPool } = ctx;
 
   sock._manualClose = false;
-
+  // ========== 打印 platform ==========
+  try {
+    const { isWABusinessPlatform } = require("@whiskeysockets/baileys");
+    console.log(`[${account.phoneNumber}] creds.platform:`, sock.authState.creds.platform);
+    console.log(`[${account.phoneNumber}] isWABusinessPlatform:`, isWABusinessPlatform(sock.authState.creds.platform));
+  } catch (err) {
+    console.log(`[${account.phoneNumber}] 检测 platform 失败:`, err.message);
+  }
   let phoneNumber = account.phoneNumber;
   if (!phoneNumber && sock.user?.id) {
     const match = sock.user.id.match(/^(\d+)/);
@@ -187,7 +194,7 @@ function handleConnectionOpen(sock, account, ctx) {
   sock.account_status = LOGIN_STATUS.CONNECTED;
   sock.lastActiveTime = new Date();
   sock._closeHandled = false;
-  
+
   updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED, "connected");
   connectionPool.set(accountId, sock); // ✅ 使用 connectionPool
 
