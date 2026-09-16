@@ -6,7 +6,7 @@ const fs = require("fs");
 const snowflake = require("../utils/snowflake");
 const axios = require("axios");
 const { getConnection } = require("../services/baileys/connect");
-const path = require("path");
+
 
 class AccountController {
   /**
