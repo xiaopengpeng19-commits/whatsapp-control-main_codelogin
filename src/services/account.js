@@ -79,14 +79,14 @@ class AccountService {
       } catch (error) {
         throw new Error(`FormatPhoneNumber error: ${error.message}`);
       }
-
+      const existing = await redisStorage.getAccountByPhone(phoneNumber);
       const account = {
-        id: snowflake.nextId().toString(),
+        id: existing ? existing.id : snowflake.nextId().toString(),
         mark: `Phone: ${formattedPhone}`,
         account_status: "unconnected",
         phoneNumber: formattedPhone,
         proxy: proxy || null,
-        sessionId: sessionId || null,
+        sessionId: sessionId || existing?.sessionId || null,
       };
 
       logger.info(`create whatsapp connection for phone number: ${formattedPhone}`);
