@@ -172,18 +172,14 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 }
 
 // ========== 连接打开 ==========
+// src/services/baileys/connection-handler.js
+
 function handleConnectionOpen(sock, account, ctx) {
   const { accountId, resolveFunc, onConnected, connectionPool } = ctx;
 
   sock._manualClose = false;
-  // ========== 打印 platform ==========
-  try {
-    const { isWABusinessPlatform } = require("@whiskeysockets/baileys");
-    logger.info(`[${account.phoneNumber}] creds.platform: ${sock.authState.creds.platform}`);
-    logger.info(`[${account.phoneNumber}] isWABusinessPlatform: ${isWABusinessPlatform(sock.authState.creds.platform)}`);
-  } catch (err) {
-    logger.error(`[${account.phoneNumber}] 检测 platform 失败: ${err.message}`);
-  }
+  sock._closeHandled = false;
+
   let phoneNumber = account.phoneNumber;
   if (!phoneNumber && sock.user?.id) {
     const match = sock.user.id.match(/^(\d+)/);
@@ -193,12 +189,22 @@ function handleConnectionOpen(sock, account, ctx) {
 
   sock.account_status = LOGIN_STATUS.CONNECTED;
   sock.lastActiveTime = new Date();
-  sock._closeHandled = false;
+
+  // ========== 判断是否是新连接 ==========
+  const isNewConnection = !connectionPool.has(accountId);
 
   updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED, "connected");
-  connectionPool.set(accountId, sock); // ✅ 使用 connectionPool
+  connectionPool.set(accountId, sock);
 
   logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
+
+  // ========== 只有新连接才推送（扫码登录）==========
+  if (isNewConnection) {
+    notifyCloud(accountId, phoneNumber, "connected", "normal");
+    logger.info(`[${accountId}] ✅ 新连接上线通知已推送`);
+  } else {
+    logger.debug(`[${accountId}] 连接已存在，跳过推送`);
+  }
 
   if (onConnected) {
     onConnected(sock).catch((err) => logger.error(`[${accountId}] 回调执行失败:`, err));

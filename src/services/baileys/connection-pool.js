@@ -58,20 +58,11 @@ class ConnectionPool {
       const connection = await createFn();
       const phone = this._getPhoneFromConnection(connection, accountId);
 
-      // 推送 NATS
-      try {
-        const nats = require("../../config/nats");
-        await nats.publishMessage("connection", {
-          accountId: accountId,
-          accountPhone: phone,
-          accountStatus: "normal",
-          socketStatus: "connected",
-          updatedAt: new Date().toISOString(),
-        });
-        logger.info(`[连接池] ✅ connection 事件已推送 (phone: ${phone})`);
-      } catch (natsErr) {
-        logger.error(`[连接池] ❌ 推送失败 (phone: ${phone})`, natsErr);
-      }
+      // ❌ 移除推送
+      // try {
+      //   const nats = require("../../config/nats");
+      //   await nats.publishMessage("connection", {...});
+      // } catch (natsErr) { ... }
 
       this.connections.set(accountId, {
         connection,
@@ -82,7 +73,6 @@ class ConnectionPool {
       });
 
       logger.info(`[连接池] 创建连接: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
-
       return connection;
     } catch (error) {
       logger.error(`[连接池] 创建连接失败 (accountId: ${accountId})`, error);
@@ -183,6 +173,7 @@ class ConnectionPool {
       phone: phone,
     });
     logger.info(`[连接池] 添加连接: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
+    // ❌ 移除推送
   }
 
   // ========== 检查连接健康状态 ==========
