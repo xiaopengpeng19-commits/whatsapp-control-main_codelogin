@@ -80,26 +80,6 @@ class AccountController {
     try {
       const { proxy, callbackurl, phoneNumber } = ctx.request.body;
 
-      // ========== 1. 如果有手机号，先查是否已存在 ==========
-      if (phoneNumber) {
-        const existing = await accountService.getAccountByPhoneNumberOrId(phoneNumber);
-        if (existing) {
-          const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(existing.id));
-          const credsPath = path.join(sessionDir, "creds.json");
-
-          // ========== 2. 凭证存在 + 账号可用 ==========
-          if (fs.existsSync(credsPath) && existing.account_status !== "expired" && existing.account_status !== "banned") {
-            logger.info(`[${phoneNumber}] 凭证已存在，无需扫码`);
-            ctx.body = {
-              status: 201,
-              data: "账号已登录",
-              accountId: existing.id,
-            };
-            return;
-          }
-        }
-      }
-
       // ========== 3. 凭证不存在或账号失效，走扫码流程 ==========
       let account;
       if (phoneNumber) {
@@ -179,24 +159,6 @@ class AccountController {
         return;
       }
 
-      // ========== 1. 先查账号是否已存在 ==========
-      const existing = await accountService.getAccountByPhoneNumberOrId(phone);
-      if (existing) {
-        const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(existing.id));
-        const credsPath = path.join(sessionDir, "creds.json");
-
-        // ========== 2. 凭证存在 + 账号可用 ==========
-        if (fs.existsSync(credsPath) && existing.account_status !== "expired" && existing.account_status !== "banned") {
-          logger.info(`[${phone}] 凭证已存在，无需配对码登录`);
-          ctx.body = {
-            status: 201,
-            data: "账号已登录",
-            accountId: existing.id,
-          };
-          return;
-        }
-      }
-
       // ========== 3. 凭证不存在或账号失效，走配对码流程 ==========
       let account;
       if (existing) {
@@ -263,7 +225,7 @@ class AccountController {
         return;
       }
 
-      
+
       ctx.body = {
         status: result.status || 500,
         data: result.data || result.error || "获取配对码失败",
