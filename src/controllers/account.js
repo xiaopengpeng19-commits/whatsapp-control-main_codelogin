@@ -7,7 +7,6 @@ const snowflake = require("../utils/snowflake");
 const axios = require("axios");
 const { getConnection } = require("../services/baileys/connect");
 
-
 class AccountController {
   /**
    * 使用手机号码登录 WhatsApp（新的改进版本）
@@ -74,44 +73,76 @@ class AccountController {
       };
     }
   }
-  /**
-   * Login to WhatsApp account using QR code
-   * @param {Object} ctx - Koa context
-   */
   async loginByQrcode(ctx) {
     try {
-      const { proxy } = ctx.request.body;
-      const { callbackurl } = ctx.request.body;
-      // Create a new account if not exists
-      let account = {
-        id: snowflake.nextId().toString(),
-        mark: "",
-        account_status: "unconnected",
-        phoneNumber: null,
-        proxy: proxy,
-        socket_status: "disconnected",
-      };
-      let callbackfun = null;
-      callbackfun = async () => {
-        logger.info("callbackurl_callbackfun:", callbackurl);
-        if (callbackurl) {
-          const axios = require("axios");
-          const axiosInstance = axios.create({
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-          try {
-            const response = await axiosInstance.get(callbackurl);
-          } catch (error) {
-            logger.info("error:", error);
+      const { proxy, callbackurl, phoneNumber } = ctx.request.body;
+
+      // ========== 1. 如果有手机号，先查是否已存在 ==========
+      if (phoneNumber) {
+        const existing = await accountService.getAccountByPhoneNumberOrId(phoneNumber);
+        if (existing) {
+          // ========== 2. 检查凭证是否存在 ==========
+          const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(existing.id));
+          const credsPath = path.join(sessionDir, "creds.json");
+
+          if (fs.existsSync(credsPath)) {
+            // ========== 3. 凭证存在，返回 201 ==========
+            logger.info(`[${phoneNumber}] 凭证已存在，无需扫码`);
+            ctx.body = {
+              status: 201,
+              data: "账号已登录",
+              accountId: existing.id,
+            };
+            return;
           }
         }
-      };
+      }
 
-      // Connect to WhatsApp and generate QR code
+      // ========== 4. 没有凭证，走扫码流程 ==========
+      let account;
+      if (phoneNumber) {
+        const existing = await accountService.getAccountByPhoneNumberOrId(phoneNumber);
+        if (existing) {
+          account = {
+            ...existing,
+            proxy: proxy || existing.proxy,
+            account_status: "unconnected",
+            socket_status: "disconnected",
+          };
+          logger.info(`[${phoneNumber}] 复用已有账号 ID: ${account.id}`);
+        }
+      }
+
+      if (!account) {
+        account = {
+          id: snowflake.nextId().toString(),
+          mark: phoneNumber ? `Phone: ${phoneNumber}` : "",
+          account_status: "unconnected",
+          phoneNumber: phoneNumber || null,
+          proxy: proxy,
+          socket_status: "disconnected",
+        };
+        logger.info(`[${phoneNumber || "未知"}] 创建新账号 ID: ${account.id}`);
+      }
+
+      // ========== 5. 回调函数 ==========
+      let callbackfun = null;
+      if (callbackurl) {
+        callbackfun = async () => {
+          logger.info("callbackurl_callbackfun:", callbackurl);
+          try {
+            const axios = require("axios");
+            await axios.get(callbackurl);
+          } catch (error) {
+            logger.info("callback error:", error);
+          }
+        };
+      }
+
+      // ========== 6. 获取二维码，返回 200 ==========
       const result = await accountService.GetQRCode(account, callbackfun);
       logger.info("resultincotroller:", result);
+
       if (result.Success) {
         ctx.body = {
           status: 200,
@@ -132,8 +163,6 @@ class AccountController {
       };
     }
   }
-  // src/controllers/account.js - loginByPairCode 方法
-
   async loginByPairCode(ctx) {
     try {
       const { phone, proxy, callbackurl } = ctx.request.body;
@@ -146,15 +175,48 @@ class AccountController {
         return;
       }
 
-      const account = {
-        id: snowflake.nextId().toString(),
-        mark: "",
-        account_status: "unconnected",
-        phoneNumber: phone,
-        proxy: proxy,
-        socket_status: "disconnected",
-      };
+      // ========== 1. 先查账号是否已存在 ==========
+      const existing = await accountService.getAccountByPhoneNumberOrId(phone);
+      if (existing) {
+        // ========== 2. 检查凭证是否存在 ==========
+        const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(existing.id));
+        const credsPath = path.join(sessionDir, "creds.json");
 
+        if (fs.existsSync(credsPath)) {
+          // ========== 3. 凭证存在，返回 201 ==========
+          logger.info(`[${phone}] 凭证已存在，无需配对码登录`);
+          ctx.body = {
+            status: 201,
+            data: "账号已登录",
+            accountId: existing.id,
+          };
+          return;
+        }
+      }
+
+      // ========== 4. 没有凭证，走配对码流程 ==========
+      let account;
+      if (existing) {
+        account = {
+          ...existing,
+          proxy: proxy || existing.proxy,
+          account_status: "unconnected",
+          socket_status: "disconnected",
+        };
+        logger.info(`[${phone}] 复用已有账号 ID: ${account.id}`);
+      } else {
+        account = {
+          id: snowflake.nextId().toString(),
+          mark: `Phone: ${phone}`,
+          account_status: "unconnected",
+          phoneNumber: phone,
+          proxy: proxy,
+          socket_status: "disconnected",
+        };
+        logger.info(`[${phone}] 创建新账号 ID: ${account.id}`);
+      }
+
+      // ========== 5. 回调函数 ==========
       let callbackfun = null;
       if (callbackurl) {
         callbackfun = async () => {
@@ -168,10 +230,10 @@ class AccountController {
         };
       }
 
+      // ========== 6. 获取配对码，返回 200 ==========
       const result = await accountService.getPairCode(account, callbackfun);
       logger.info("result get pair code", result);
 
-      // ========== 防御性检查 ==========
       if (!result) {
         ctx.body = {
           status: 500,
@@ -377,7 +439,7 @@ class AccountController {
       };
     }
   }
-  
+
   // src/controllers/account.js - exportAccount 方法
 
   async exportAccount(ctx) {
