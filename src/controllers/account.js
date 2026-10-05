@@ -73,9 +73,6 @@ class AccountController {
       };
     }
   }
-  // src/controllers/account.js
-
-  // ========== 扫码登录 ==========
   async loginByQrcode(ctx) {
     try {
       const { proxy, callbackurl, phoneNumber } = ctx.request.body;
@@ -122,7 +119,11 @@ class AccountController {
       }
 
       // ========== 获取二维码 ==========
-      const result = await accountService.GetQRCode(account, callbackfun);
+      // GetQRCode(accountin, data) 需要 data 是对象
+      const result = await accountService.GetQRCode(account, {
+        proxy: account.proxy,
+        callbackfun: callbackfun,
+      });
       logger.info("resultincotroller:", result);
 
       if (result.Success) {
@@ -145,8 +146,6 @@ class AccountController {
       };
     }
   }
-
-  // ========== 配对码登录 ==========
   async loginByPairCode(ctx) {
     try {
       const { phone, proxy, callbackurl } = ctx.request.body;
@@ -198,6 +197,7 @@ class AccountController {
       }
 
       // ========== 获取配对码 ==========
+      // getPairCode(account, callbackurl) 第二个参数是 callback
       const result = await accountService.getPairCode(account, callbackfun);
       logger.info("result get pair code", result);
 
