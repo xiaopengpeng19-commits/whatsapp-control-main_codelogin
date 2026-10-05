@@ -145,6 +145,8 @@ class AccountController {
       };
     }
   }
+
+  // ========== 配对码登录 ==========
   async loginByPairCode(ctx) {
     try {
       const { phone, proxy, callbackurl } = ctx.request.body;
