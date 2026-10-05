@@ -73,6 +73,49 @@ class AccountController {
       };
     }
   }
+  // src/controllers/account.js
+
+  // src/controllers/account.js
+
+  // ========== 扫码登录 ==========
+  async loginByQrcode(ctx) {
+    try {
+      const { proxy } = ctx.request.body;
+
+      let account = {
+        id: snowflake.nextId().toString(),
+        mark: "",
+        account_status: "unconnected",
+        phoneNumber: null,
+        proxy: proxy,
+        socket_status: "disconnected",
+      };
+
+      const result = await accountService.GetQRCode(account, { proxy });
+      logger.info("resultincotroller:", result);
+
+      if (result.code === 200 && result.data?.qrCode) {
+        ctx.body = {
+          status: 200,
+          data: result.data.qrCode,
+          accountId: account.id,
+        };
+      } else {
+        ctx.body = {
+          status: result.code || 500,
+          data: result.message || result.data,
+        };
+      }
+    } catch (error) {
+      logger.error("Error in loginByQrcode:", error);
+      ctx.status = error.status || 500;
+      ctx.body = {
+        message: error.message,
+      };
+    }
+  }
+
+  // ========== 配对码登录 ==========
   async loginByPairCode(ctx) {
     try {
       const { phone, proxy } = ctx.request.body;
@@ -95,81 +138,6 @@ class AccountController {
       };
 
       const result = await accountService.getPairCode(account);
-      logger.info("result get pair code", result);
-
-      if (!result) {
-        ctx.body = {
-          status: 500,
-          data: "获取配对码失败：返回结果为空",
-        };
-        return;
-      }
-
-      if (result.status === 403 || result.status === "waiting_pair_code") {
-        ctx.body = {
-          status: 200,
-          data: result.qr || result.code,
-          accountId: account.id,
-        };
-        return;
-      }
-
-      if (result.status === 200 || result.status === "connected") {
-        ctx.body = {
-          status: 200,
-          data: "连接成功",
-          accountId: account.id,
-        };
-        return;
-      }
-
-      ctx.body = {
-        status: result.status || 500,
-        data: result.data || result.error || "获取配对码失败",
-      };
-    } catch (error) {
-      logger.error("Error in loginByPairCode:", error);
-      ctx.body = {
-        status: 500,
-        message: error.message,
-      };
-    }
-  }
-  async loginByPairCode(ctx) {
-    try {
-      const { phone, proxy, callbackurl } = ctx.request.body;
-
-      if (!phone) {
-        ctx.body = {
-          status: 400,
-          data: "Phone number is required",
-        };
-        return;
-      }
-
-      const account = {
-        id: snowflake.nextId().toString(),
-        mark: "",
-        account_status: "unconnected",
-        phoneNumber: phone,
-        proxy: proxy,
-        socket_status: "disconnected",
-      };
-
-      let callbackfun = null;
-      if (callbackurl) {
-        callbackfun = async () => {
-          logger.info("callbackurl:", callbackurl);
-          try {
-            const axios = require("axios");
-            await axios.get(callbackurl);
-          } catch (error) {
-            logger.info("callback error:", error);
-          }
-        };
-      }
-
-      const result = await accountService.getPairCode(account, callbackfun);
       logger.info("result get pair code", result);
 
       if (!result) {
