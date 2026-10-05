@@ -73,59 +73,64 @@ class AccountController {
       };
     }
   }
-  async loginByQrcode(ctx) {
+  async loginByPairCode(ctx) {
     try {
-      const { proxy } = ctx.request.body;
-      const { callbackurl } = ctx.request.body;
+      const { phone, proxy } = ctx.request.body;
 
-      // Create a new account if not exists
-      let account = {
+      if (!phone) {
+        ctx.body = {
+          status: 400,
+          data: "Phone number is required",
+        };
+        return;
+      }
+
+      const account = {
         id: snowflake.nextId().toString(),
         mark: "",
         account_status: "unconnected",
-        phoneNumber: null,
+        phoneNumber: phone,
         proxy: proxy,
         socket_status: "disconnected",
       };
 
-      let callbackfun = null;
-      callbackfun = async () => {
-        logger.info("callbackurl_callbackfun:", callbackurl);
-        if (callbackurl) {
-          const axios = require("axios");
-          const axiosInstance = axios.create({
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-          try {
-            const response = await axiosInstance.get(callbackurl);
-          } catch (error) {
-            logger.info("error:", error);
-          }
-        }
-      };
+      const result = await accountService.getPairCode(account);
+      logger.info("result get pair code", result);
 
-      // Connect to WhatsApp and generate QR code
-      const result = await accountService.GetQRCode(account, callbackfun);
-      logger.info("resultincotroller:", result);
-
-      if (result.Success) {
-        ctx.body = {
-          status: 200,
-          data: result.Data,
-          accountId: account.id,
-        };
-      } else {
+      if (!result) {
         ctx.body = {
           status: 500,
-          data: result.data,
+          data: "获取配对码失败：返回结果为空",
         };
+        return;
       }
-    } catch (error) {
-      logger.error("Error in loginByQrcode1:", error);
-      ctx.status = error.status || 500;
+
+      if (result.status === 403 || result.status === "waiting_pair_code") {
+        ctx.body = {
+          status: 200,
+          data: result.qr || result.code,
+          accountId: account.id,
+        };
+        return;
+      }
+
+      if (result.status === 200 || result.status === "connected") {
+        ctx.body = {
+          status: 200,
+          data: "连接成功",
+          accountId: account.id,
+        };
+        return;
+      }
+
       ctx.body = {
+        status: result.status || 500,
+        data: result.data || result.error || "获取配对码失败",
+      };
+    } catch (error) {
+      logger.error("Error in loginByPairCode:", error);
+      ctx.body = {
+        status: 500,
         message: error.message,
       };
     }
