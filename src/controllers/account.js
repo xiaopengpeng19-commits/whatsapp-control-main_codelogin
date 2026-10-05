@@ -73,6 +73,9 @@ class AccountController {
       };
     }
   }
+  // src/controllers/account.js
+
+  // ========== 扫码登录 ==========
   async loginByQrcode(ctx) {
     try {
       const { proxy, callbackurl, phoneNumber } = ctx.request.body;
@@ -81,12 +84,11 @@ class AccountController {
       if (phoneNumber) {
         const existing = await accountService.getAccountByPhoneNumberOrId(phoneNumber);
         if (existing) {
-          // ========== 2. 检查凭证是否存在 ==========
           const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(existing.id));
           const credsPath = path.join(sessionDir, "creds.json");
 
-          if (fs.existsSync(credsPath)) {
-            // ========== 3. 凭证存在，返回 201 ==========
+          // ========== 2. 凭证存在 + 账号可用 ==========
+          if (fs.existsSync(credsPath) && existing.account_status !== "expired" && existing.account_status !== "banned") {
             logger.info(`[${phoneNumber}] 凭证已存在，无需扫码`);
             ctx.body = {
               status: 201,
@@ -98,7 +100,7 @@ class AccountController {
         }
       }
 
-      // ========== 4. 没有凭证，走扫码流程 ==========
+      // ========== 3. 凭证不存在或账号失效，走扫码流程 ==========
       let account;
       if (phoneNumber) {
         const existing = await accountService.getAccountByPhoneNumberOrId(phoneNumber);
@@ -125,7 +127,7 @@ class AccountController {
         logger.info(`[${phoneNumber || "未知"}] 创建新账号 ID: ${account.id}`);
       }
 
-      // ========== 5. 回调函数 ==========
+      // ========== 4. 回调函数 ==========
       let callbackfun = null;
       if (callbackurl) {
         callbackfun = async () => {
@@ -139,7 +141,7 @@ class AccountController {
         };
       }
 
-      // ========== 6. 获取二维码，返回 200 ==========
+      // ========== 5. 获取二维码 ==========
       const result = await accountService.GetQRCode(account, callbackfun);
       logger.info("resultincotroller:", result);
 
@@ -163,6 +165,8 @@ class AccountController {
       };
     }
   }
+
+  // ========== 配对码登录 ==========
   async loginByPairCode(ctx) {
     try {
       const { phone, proxy, callbackurl } = ctx.request.body;
@@ -178,12 +182,11 @@ class AccountController {
       // ========== 1. 先查账号是否已存在 ==========
       const existing = await accountService.getAccountByPhoneNumberOrId(phone);
       if (existing) {
-        // ========== 2. 检查凭证是否存在 ==========
         const sessionDir = path.join(process.env.STORAGE_PATH || "./storage/sessions", String(existing.id));
         const credsPath = path.join(sessionDir, "creds.json");
 
-        if (fs.existsSync(credsPath)) {
-          // ========== 3. 凭证存在，返回 201 ==========
+        // ========== 2. 凭证存在 + 账号可用 ==========
+        if (fs.existsSync(credsPath) && existing.account_status !== "expired" && existing.account_status !== "banned") {
           logger.info(`[${phone}] 凭证已存在，无需配对码登录`);
           ctx.body = {
             status: 201,
@@ -194,7 +197,7 @@ class AccountController {
         }
       }
 
-      // ========== 4. 没有凭证，走配对码流程 ==========
+      // ========== 3. 凭证不存在或账号失效，走配对码流程 ==========
       let account;
       if (existing) {
         account = {
@@ -216,7 +219,7 @@ class AccountController {
         logger.info(`[${phone}] 创建新账号 ID: ${account.id}`);
       }
 
-      // ========== 5. 回调函数 ==========
+      // ========== 4. 回调函数 ==========
       let callbackfun = null;
       if (callbackurl) {
         callbackfun = async () => {
@@ -230,7 +233,7 @@ class AccountController {
         };
       }
 
-      // ========== 6. 获取配对码，返回 200 ==========
+      // ========== 5. 获取配对码 ==========
       const result = await accountService.getPairCode(account, callbackfun);
       logger.info("result get pair code", result);
 
