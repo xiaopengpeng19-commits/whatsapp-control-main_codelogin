@@ -75,55 +75,39 @@ class AccountController {
   }
   async loginByQrcode(ctx) {
     try {
-      const { proxy, callbackurl, phoneNumber } = ctx.request.body;
+      const { proxy } = ctx.request.body;
+      const { callbackurl } = ctx.request.body;
 
-      // ========== 走扫码流程 ==========
-      let account;
-      if (phoneNumber) {
-        const existing = await accountService.getAccountByPhoneNumberOrId(phoneNumber);
-        if (existing) {
-          account = {
-            ...existing,
-            proxy: proxy || existing.proxy,
-            account_status: "unconnected",
-            socket_status: "disconnected",
-          };
-          logger.info(`[${phoneNumber}] 复用已有账号 ID: ${account.id}`);
-        }
-      }
+      // Create a new account if not exists
+      let account = {
+        id: snowflake.nextId().toString(),
+        mark: "",
+        account_status: "unconnected",
+        phoneNumber: null,
+        proxy: proxy,
+        socket_status: "disconnected",
+      };
 
-      if (!account) {
-        account = {
-          id: snowflake.nextId().toString(),
-          mark: phoneNumber ? `Phone: ${phoneNumber}` : "",
-          account_status: "unconnected",
-          phoneNumber: phoneNumber || null,
-          proxy: proxy,
-          socket_status: "disconnected",
-        };
-        logger.info(`[${phoneNumber || "未知"}] 创建新账号 ID: ${account.id}`);
-      }
-
-      // ========== 回调函数 ==========
       let callbackfun = null;
-      if (callbackurl) {
-        callbackfun = async () => {
-          logger.info("callbackurl_callbackfun:", callbackurl);
+      callbackfun = async () => {
+        logger.info("callbackurl_callbackfun:", callbackurl);
+        if (callbackurl) {
+          const axios = require("axios");
+          const axiosInstance = axios.create({
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
           try {
-            const axios = require("axios");
-            await axios.get(callbackurl);
+            const response = await axiosInstance.get(callbackurl);
           } catch (error) {
-            logger.info("callback error:", error);
+            logger.info("error:", error);
           }
-        };
-      }
+        }
+      };
 
-      // ========== 获取二维码 ==========
-      // GetQRCode(accountin, data) 需要 data 是对象
-      const result = await accountService.GetQRCode(account, {
-        proxy: account.proxy,
-        callbackfun: callbackfun,
-      });
+      // Connect to WhatsApp and generate QR code
+      const result = await accountService.GetQRCode(account, callbackfun);
       logger.info("resultincotroller:", result);
 
       if (result.Success) {
@@ -158,31 +142,15 @@ class AccountController {
         return;
       }
 
-      // ========== 走配对码流程 ==========
-      let account;
-      const existing = await accountService.getAccountByPhoneNumberOrId(phone);
+      const account = {
+        id: snowflake.nextId().toString(),
+        mark: "",
+        account_status: "unconnected",
+        phoneNumber: phone,
+        proxy: proxy,
+        socket_status: "disconnected",
+      };
 
-      if (existing) {
-        account = {
-          ...existing,
-          proxy: proxy || existing.proxy,
-          account_status: "unconnected",
-          socket_status: "disconnected",
-        };
-        logger.info(`[${phone}] 复用已有账号 ID: ${account.id}`);
-      } else {
-        account = {
-          id: snowflake.nextId().toString(),
-          mark: `Phone: ${phone}`,
-          account_status: "unconnected",
-          phoneNumber: phone,
-          proxy: proxy,
-          socket_status: "disconnected",
-        };
-        logger.info(`[${phone}] 创建新账号 ID: ${account.id}`);
-      }
-
-      // ========== 回调函数 ==========
       let callbackfun = null;
       if (callbackurl) {
         callbackfun = async () => {
@@ -196,8 +164,6 @@ class AccountController {
         };
       }
 
-      // ========== 获取配对码 ==========
-      // getPairCode(account, callbackurl) 第二个参数是 callback
       const result = await accountService.getPairCode(account, callbackfun);
       logger.info("result get pair code", result);
 
