@@ -263,6 +263,7 @@ class AccountController {
         return;
       }
 
+      
       ctx.body = {
         status: result.status || 500,
         data: result.data || result.error || "获取配对码失败",
