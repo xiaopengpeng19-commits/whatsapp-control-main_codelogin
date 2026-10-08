@@ -231,6 +231,8 @@ async function updateAccount(accountId, fields) {
   return updated;
 }
 
+// src/services/redisStorage.js
+
 async function deleteAccount(accountId) {
   const client = getClient();
   const existing = await getAccountById(accountId);
@@ -246,8 +248,10 @@ async function deleteAccount(accountId) {
   const id = String(accountId);
   await client.sRem(ACCOUNT_SET, id);
 
-  await deleteChatsByAccountId(id);
-  await deleteGroupsByAccountId(id);
+  // ========== 不删除联系人和群组 ==========
+  // await deleteChatsByAccountId(id);
+  // await deleteGroupsByAccountId(id);
+
   await client.del(getAccountKey(id));
   return true;
 }
