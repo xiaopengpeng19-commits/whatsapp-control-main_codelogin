@@ -9,37 +9,41 @@ function redisKey(...parts) {
 async function fixMigrateChats() {
   const client = getClient();
 
-  // 1. 获取所有账号
-  const accountIds = await client.sMembers("accounts:set");
-  console.log(`找到 ${accountIds.length} 个账号`);
+  // ========== 扫描所有 chat key，反推 accountId ==========
+  const chatKeys = await client.keys("account:*:chats");
+  console.log(`找到 ${chatKeys.length} 个 chat set`);
 
   let migratedCount = 0;
   let migratedAccounts = 0;
 
-  for (const accountId of accountIds) {
-    // 2. 获取手机号
+  for (const key of chatKeys) {
+    // 从 key 中提取 accountId
+    const match = key.match(/^account:(.+):chats$/);
+    if (!match) continue;
+    const accountId = match[1];
+
+    // 获取手机号
     const accountPhone = await client.hGet(`account:id:${accountId}`, "phoneNumber");
     if (!accountPhone) continue;
 
-    // 3. 如果 accountId === accountPhone，跳过（已经一样）
+    // 如果 accountId === accountPhone，跳过
     if (String(accountId) === String(accountPhone)) continue;
 
-    // 4. 检查旧 key 是否有数据
-    const oldChatsKey = redisKey("account", accountId, "chats");
-    const oldPeerIds = await client.sMembers(oldChatsKey);
+    // 旧 key 的 peerId
+    const oldPeerIds = await client.sMembers(key);
     if (!oldPeerIds || oldPeerIds.length === 0) continue;
 
-    // 5. 检查新 key 是否有数据
+    // 新 key 的数量
     const newChatsKey = redisKey("account", accountPhone, "chats");
     const newCount = await client.sCard(newChatsKey);
 
-    // 6. 如果新 key 已经有数据，跳过（避免覆盖）
+    // 如果新 key 已有数据，跳过
     if (newCount > 0) {
       console.log(`[${accountPhone}] 新 key 已有 ${newCount} 个，跳过`);
       continue;
     }
 
-    // 7. 迁移
+    // 迁移
     console.log(`[${accountPhone}] 迁移 ${oldPeerIds.length} 个联系人`);
     let count = 0;
 
