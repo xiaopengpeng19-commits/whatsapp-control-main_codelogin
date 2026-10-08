@@ -70,12 +70,22 @@ function getAccountPhoneKey(phoneNumber) {
   return redisKey("account", "phone", phoneNumber);
 }
 
-function getAccountChatsSetKey(accountId) {
-  return redisKey("account", accountId, "chats");
+// ========== 新的 key 函数（用手机号）==========
+function getChatKey(accountPhone, peerId) {
+  return redisKey("chat", accountPhone, peerId);
 }
 
-function getChatKey(accountId, peerId) {
+function getAccountChatsSetKey(accountPhone) {
+  return redisKey("account", accountPhone, "chats");
+}
+
+// ========== 兼容旧 key（用 accountId）==========
+function getOldChatKey(accountId, peerId) {
   return redisKey("chat", accountId, peerId);
+}
+
+function getOldAccountChatsSetKey(accountId) {
+  return redisKey("account", accountId, "chats");
 }
 
 function getGroupKey(accountId, groupId) {
@@ -242,76 +252,87 @@ async function deleteAccount(accountId) {
   return true;
 }
 
-// src/services/redisStorage.js
-
 async function upsertChat(chat) {
   const client = getClient();
-  if (chat.isGroup) {
+
+  // ========== 用 accountPhone ==========
+  const accountPhone = chat.accountPhone;
+  if (!accountPhone) {
+    logger.debug(`跳过：accountPhone 为空`);
     return null;
   }
-  // ========== 过滤官方账号/无效账号 ==========
+
   const peerPhone = chat.peerPhone || "";
   const peerId = chat.peerId || "";
+
+  // 过滤
   if (!peerId || !peerId.includes("@lid")) {
-    logger.debug(`跳过非 lid 格式: peerId=${peerId}, peerPhone=${peerPhone}`);
+    logger.debug(`跳过非 lid 格式: peerId=${peerId}`);
     return null;
   }
-  // 手机号为 0 或空 → 跳过
   if (String(peerPhone) === "0" || String(peerPhone) === "") {
-    logger.debug(`跳过无效账号: peerPhone=${peerPhone}, peerId=${peerId}`);
+    logger.debug(`跳过无效手机号: peerPhone=${peerPhone}`);
     return null;
   }
   if (String(peerPhone) === String(peerId.split("@")[0])) {
     return null;
   }
-  if (peerPhone.includes("@s.whatsapp.net")) {
-    peerPhone = peerPhone.split("@")[0];
+  if (chat.isGroup) {
+    return null;
   }
   if (peerId.includes("@newsletter")) {
-    logger.debug(`跳过 Newsletter: ${peerId}`);
     return null;
   }
 
-  // ========== 正常保存 ==========
-  const chatKey = getChatKey(chat.accountId, chat.peerId);
-  const existingData = await client.hGetAll(chatKey);
-  const existingChat = parseObject(existingData) || {};
-
-  // ========== 判断新增还是更新 ==========
-  const isNew = !existingChat.id;
-
-  await client.sAdd(getAccountChatsSetKey(chat.accountId), chat.peerId);
+  // ========== 用手机号查重 ==========
+  const existingChats = await getChatsByAccountPhone(accountPhone);
+  let existingChat = null;
+  for (const c of existingChats) {
+    if (String(c.peerPhone) === String(peerPhone)) {
+      existingChat = c;
+      break;
+    }
+  }
 
   const now = new Date().toISOString();
-  const updatedChat = {
-    ...existingChat,
-    ...chat,
-    updatedAt: now,
-    createdAt: existingChat.createdAt || now,
-  };
+  let isNew = false;
+  let result = null;
 
-  await client.hSet(chatKey, flattenObject(updatedChat));
+  if (existingChat) {
+    // 更新
+    const chatKey = getChatKey(accountPhone, existingChat.peerId);
+    const updatedChat = { ...existingChat, ...chat, updatedAt: now };
+    await client.hSet(chatKey, flattenObject(updatedChat));
+    result = { ...updatedChat, isNew: false };
+  } else {
+    // 新增
+    const chatKey = getChatKey(accountPhone, peerId);
+    const newChat = { ...chat, createdAt: now, updatedAt: now };
+    await client.sAdd(getAccountChatsSetKey(accountPhone), peerId);
+    await client.hSet(chatKey, flattenObject(newChat));
+    result = { ...newChat, isNew: true };
+    isNew = true;
+  }
 
-  // ========== 推送 contact.event 给云控 ==========
+  // 推送 contact.event
   try {
     await nats.publishMessage("contact.event", {
       accountId: chat.accountId,
-      accountPhone: chat.accountPhone || chat.accountId,
+      accountPhone: accountPhone,
       eventType: isNew ? "contact.upsert" : "contact.update",
       data: {
-        peerPhone: updatedChat.peerPhone,
-        peerId: updatedChat.peerId,
-        peerName: updatedChat.peerName,
+        peerPhone: result.peerPhone,
+        peerId: result.peerId,
+        peerName: result.peerName,
         isGroup: false,
       },
-      timestamp: new Date().toISOString(),
+      timestamp: now,
     });
-    logger.info(`[upsertChat] ✅ 联系人事件已推送: ${isNew ? "新增" : "更新"} ${updatedChat.peerPhone}`);
   } catch (err) {
-    logger.error(`[upsertChat] ❌ 推送失败:`, err);
+    logger.error(`[upsertChat] 推送失败:`, err);
   }
 
-  return updatedChat;
+  return result;
 }
 
 async function getChatsByAccountId(accountId) {
@@ -495,7 +516,28 @@ async function getMessagesByChat(chatId, limit = 50, offset = 0) {
   );
   return messages.filter(Boolean);
 }
+// src/services/redisStorage.js
 
+async function getChatsByAccountPhone(accountPhone) {
+  const client = getClient();
+  const peerIds = await client.sMembers(getAccountChatsSetKey(accountPhone));
+  if (!peerIds || peerIds.length === 0) {
+    return [];
+  }
+
+  const chats = await Promise.all(
+    peerIds.map(async (peerId) => {
+      const data = await client.hGetAll(getChatKey(accountPhone, peerId));
+      return parseObject(data);
+    }),
+  );
+  return chats.filter(Boolean);
+}
+
+async function getContactsByAccountPhone(accountPhone) {
+  const chats = await getChatsByAccountPhone(accountPhone);
+  return chats.filter((chat) => chat.isGroup === false || chat.isGroup === "false" || chat.isGroup === 0 || chat.isGroup === "0");
+}
 async function updateMessageStatus(messageId, status) {
   const client = getClient();
   const messageKey = getMessageKey(messageId);

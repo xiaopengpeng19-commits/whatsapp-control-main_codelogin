@@ -516,22 +516,18 @@ class AccountService {
   // services/account.js - ContactsList
 
   async ContactsList(idorphone, body) {
-    try {
-      // ========== 先通过手机号查 accountId ==========
-      const account = await this.getAccountByPhoneNumberOrId(idorphone);
-      if (!account) {
-        return { code: 404, message: "账号不存在", data: null };
-      }
-
-      const contacts = await redisStorage.getContactsByAccountId(account.id);
-      return {
-        code: 200,
-        message: "success",
-        data: { contacts },
-      };
-    } catch (error) {
-      return { code: 500, message: error.message, data: null };
+    const account = await this.getAccountByPhoneNumberOrId(idorphone);
+    if (!account) {
+      return { code: 404, message: "账号不存在", data: null };
     }
+
+    // ========== 用手机号查询 ==========
+    const contacts = await redisStorage.getContactsByAccountPhone(account.phoneNumber);
+    return {
+      code: 200,
+      message: "success",
+      data: { contacts },
+    };
   }
   // ========== AddContact（单人添加） ==========
   async AddContact(idorphone, body) {
