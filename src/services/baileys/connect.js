@@ -46,9 +46,12 @@ const connectionPool = new ConnectionPool({
 // ==========================================
 // 创建连接
 // ==========================================
+// src/services/baileys/connect.js
+
 async function createConnection(account, onConnected = null, usePairCode = false) {
   const accountId = account.id;
   let resolveFunc, rejectFunc;
+  let sock = null; // ← 提前声明，方便在 catch 中关闭
 
   const loginPromise = new Promise((resolve, reject) => {
     resolveFunc = resolve;
@@ -71,7 +74,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
     const hasSynced = account.phoneNumber ? await getAccountSyncFlag(account.phoneNumber) : false;
     const shouldSync = !hasSynced;
 
-    const sock = makeWASocket({
+    sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
@@ -113,7 +116,8 @@ async function createConnection(account, onConnected = null, usePairCode = false
       usePairCode,
       onConnected,
       saveCreds,
-      connectionPool, // ✅ 传入 connectionPool
+      connectionPool,
+      _resolved: false,
     };
     const connectionHandler = createConnectionHandler(sock, account, ctx);
 
@@ -134,11 +138,10 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["contacts.upsert"]) {
         const contacts = events["contacts.upsert"];
-
         for (const contact of contacts || []) {
           try {
             const jid = contact.lid;
-            const phoneNumber = contact.phoneNumber.split("@")[0];
+            const phoneNumber = contact.phoneNumber?.split("@")[0];
             const name = contact.name || contact.notify || phoneNumber;
 
             await redisStorage.upsertChat({
@@ -198,28 +201,21 @@ async function createConnection(account, onConnected = null, usePairCode = false
         logger.info(`[${account.phoneNumber}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
+
       if (events["chats.update"]) {
         const updates = events["chats.update"];
         for (const update of updates) {
-          const id = update.id; // 会话 ID
+          const id = update.id;
+          if (id && id.includes("@g.us")) continue;
 
-          // ========== 跳过群聊 ==========
-          if (id && id.includes("@g.us")) {
-            logger.debug(`[${accountId}] 跳过群聊: ${id}`);
-            continue;
-          }
-
-          // ========== 只处理单聊 ==========
-          // 从 messages 中提取联系人信息
           for (const msgData of update.messages || []) {
             const key = msgData.message?.key;
             const pushName = msgData.message?.pushName;
 
             if (key) {
-              const jid = key.remoteJid; // 可能是 @lid 或 @s.whatsapp.net
-              const altJid = key.remoteJidAlt; // @s.whatsapp.net
+              const jid = key.remoteJid;
+              const altJid = key.remoteJidAlt;
 
-              // 只处理单聊（不是群聊）
               if (jid && !jid.includes("@g.us") && !jid.includes("@newsletter")) {
                 let peerPhone = "";
                 if (altJid && altJid.includes("@s.whatsapp.net")) {
@@ -232,7 +228,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
                   accountId: accountId,
                   accountPhone: account.phoneNumber,
                   peerPhone: peerPhone,
-                  peerId: jid, // @lid 格式
+                  peerId: jid,
                   peerName: pushName || peerPhone,
                   isGroup: false,
                 });
@@ -298,20 +294,26 @@ async function createConnection(account, onConnected = null, usePairCode = false
       }
     });
 
+    // ========== 超时处理 ==========
     const timeoutDuration = usePairCode ? 60000 : 120000;
     const timeoutId = setTimeout(() => {
       logger.error(`[${account.phoneNumber}] 登录超时`);
 
-      // ========== 不要随意修改账号状态 ==========
-      // 检查账号是否真的在线
-      const isActuallyOnline = sock.user && sock.user.id;
+      // ========== 新增：关闭 sock ==========
+      try {
+        if (sock && sock.end) {
+          sock.end().catch(() => {});
+          logger.info(`[${account.phoneNumber}] 超时后已关闭 sock`);
+        }
+      } catch (e) {
+        logger.error(`[${account.phoneNumber}] 关闭 sock 失败:`, e);
+      }
 
+      const isActuallyOnline = sock.user && sock.user.id;
       if (!isActuallyOnline) {
-        // 只有确认不在线时，才修改状态
         sock.account_status = LOGIN_STATUS.FAILED;
         updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
       } else {
-        // 账号实际上还在线，只记录超时日志，不修改状态
         logger.warn(`[${account.phoneNumber}] 登录超时，但账号仍在线`);
       }
 
@@ -320,11 +322,10 @@ async function createConnection(account, onConnected = null, usePairCode = false
       }
     }, timeoutDuration);
 
+    // ========== 配对码模式 ==========
     if (usePairCode && !state.creds.registered) {
-      // ========== 等待 3 秒让连接稳定 ==========
       await new Promise((resolve) => setTimeout(resolve, 1000));
       try {
-        // ========== 配对码模式：直接请求，不等待 qr 事件 ==========
         const code = await sock.requestPairingCode(account.phoneNumber);
         logger.info(`[${account.phoneNumber}] 配对码生成成功: ${code}`);
         resolveFunc({
@@ -344,6 +345,17 @@ async function createConnection(account, onConnected = null, usePairCode = false
     return result;
   } catch (error) {
     logger.error(`[${account.phoneNumber}] 创建连接失败:`, error);
+
+    // ========== 新增：异常时关闭 sock ==========
+    try {
+      if (sock && sock.end) {
+        sock.end().catch(() => {});
+        logger.info(`[${account.phoneNumber}] 异常后已关闭 sock`);
+      }
+    } catch (e) {
+      logger.error(`[${account.phoneNumber}] 关闭 sock 失败:`, e);
+    }
+
     return { status: "failed", error: error.message };
   }
 }
