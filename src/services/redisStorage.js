@@ -595,4 +595,6 @@ module.exports = {
   getAccountSyncFlag,
   setAccountSyncFlag,
   deleteAccountSyncFlag,
+  getChatsByAccountPhone,
+  getContactsByAccountPhone,
 };
