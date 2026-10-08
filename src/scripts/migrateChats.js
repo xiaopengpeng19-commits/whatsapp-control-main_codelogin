@@ -1,7 +1,6 @@
-// scripts/migrateChats.js
+// src/scripts/migrateChats.js
 
-const redisStorage = require("../src/services/redisStorage");
-const { getClient } = require("../src/config/redis");
+const { getClient } = require("../config/redis");
 
 async function migrateChats() {
   const client = getClient();
@@ -11,12 +10,14 @@ async function migrateChats() {
   console.log(`找到 ${accountIds.length} 个账号`);
 
   let migratedCount = 0;
+  let skippedCount = 0;
 
   for (const accountId of accountIds) {
     // 2. 获取账号手机号
     const accountPhone = await client.hGet(`account:id:${accountId}`, "phoneNumber");
     if (!accountPhone) {
       console.log(`[${accountId}] 没有手机号，跳过`);
+      skippedCount++;
       continue;
     }
 
@@ -41,16 +42,13 @@ async function migrateChats() {
       await client.sAdd(`account:${accountPhone}:chats`, peerId);
       migratedCount++;
     }
-
-    // 5. 可选：删除旧 key
-    // await client.del(oldChatsKey);
-    // for (const peerId of peerIds) {
-    //   await client.del(`chat:${accountId}:${peerId}`);
-    // }
   }
 
-  console.log(`✅ 迁移完成，共迁移 ${migratedCount} 个联系人`);
+  console.log(`✅ 迁移完成，共迁移 ${migratedCount} 个联系人，跳过 ${skippedCount} 个账号`);
   process.exit(0);
 }
 
-migrateChats().catch(console.error);
+migrateChats().catch((err) => {
+  console.error("迁移失败:", err);
+  process.exit(1);
+});
