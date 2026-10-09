@@ -7,6 +7,7 @@ const { formatPhoneNumber, isValidPhoneNumber, smartFormatPhoneNumber } = requir
 const redisStorage = require("./redisStorage");
 const path = require("path");
 const fs = require("fs");
+const { getSessionDir } = require("./baileys/utils");
 class AccountService {
   // ========== 获取账号平台类型 ==========
   async GetAccountPlatform(idorphone, body) {
@@ -214,21 +215,16 @@ class AccountService {
   /**
    * Connect an account - Get QR Code
    */
-  async GetQRCode(accountin, data) {
-    logger.info("GetQRCode:", accountin, data);
+  async GetQRCode(account, data) {
+    logger.info("GetQRCode:", account, data);
     const { proxy, SessionId } = data;
-    let account = {
-      id: snowflake.nextId().toString(),
-      mark: "",
-      account_status: "unconnected",
-      phoneNumber: null,
-      proxy: proxy,
-      socket_status: "disconnected",
-    };
-    logger.info("account:", account);
-    let callbackfun = null;
 
-    callbackfun = async () => {
+    if (!account || !account.id) {
+      return { code: 400, message: "account is required", data: null };
+    }
+    if (proxy) account.proxy = proxy;
+
+    const callbackfun = async () => {
       try {
         await redisStorage.upsertAccount({
           phoneNumber: account.phoneNumber,
@@ -245,31 +241,84 @@ class AccountService {
       }
     };
 
-    logger.info("callbackfuncgetQrCode", account);
-    let result = await createConnection(account, callbackfun);
+    const result = await createConnection(account, callbackfun);
     logger.info("resultgetQrCode:", result);
 
-    if (result.status == "failed") {
-      return {
-        code: 500,
-        message: "cant connect to whatsapp",
-        data: null,
-      };
+    if (result.status === "failed") {
+      return { code: 500, message: "cant connect to whatsapp", data: null };
     }
-    if (result.status == "waiting_qr") {
+
+    if (result.status === "waiting_qr") {
+      const sock = result.sock;
+
+      // ========== 独立扫码超时：5 分钟没扫上就释放 ==========
+      const QR_TIMEOUT_MS = 5 * 60 * 1000;
+      let released = false;
+
+      const releaseQrSession = async (reason) => {
+        if (released) return;
+        released = true;
+        logger.info(`[${account.id}] 释放扫码 session，原因: ${reason}`);
+
+        // 1. 关 sock
+        try {
+          if (sock) {
+            sock._manualClose = true;
+            if (sock.end) await sock.end().catch(() => {});
+          }
+        } catch (e) {
+          logger.error(`[${account.id}] 关闭 sock 失败:`, e);
+        }
+
+        // 2. 清 session 目录
+        try {
+          const sessionDir = getSessionDir(account.id);
+          if (fs.existsSync(sessionDir)) {
+            fs.rmSync(sessionDir, { recursive: true, force: true });
+            logger.info(`[${account.id}] 已删除 session 目录: ${sessionDir}`);
+          }
+        } catch (e) {
+          logger.error(`[${account.id}] 删除 session 目录失败:`, e);
+        }
+
+        // 3. 清 Redis 里没有号码的临时账号
+        try {
+          const existing = await redisStorage.getAccountById(account.id);
+          if (existing && !existing.phoneNumber) {
+            await redisStorage.deleteAccount(account.id);
+            logger.info(`[${account.id}] 已清理无号码的 Redis 账号`);
+          }
+        } catch (e) {}
+      };
+
+      const qrTimeout = setTimeout(() => {
+        releaseQrSession("超时").catch(() => {});
+      }, QR_TIMEOUT_MS);
+
+      // 扫码成功 / 连接关闭 → 取消超时
+      if (sock && sock.ev) {
+        const onUpdate = (update) => {
+          if (update.connection === "open") {
+            clearTimeout(qrTimeout);
+            released = true;
+            logger.info(`[${account.id}] 扫码成功，取消超时释放`);
+            sock.ev.off?.("connection.update", onUpdate);
+          } else if (update.connection === "close") {
+            clearTimeout(qrTimeout);
+            sock.ev.off?.("connection.update", onUpdate);
+          }
+        };
+        sock.ev.on("connection.update", onUpdate);
+      }
+
       return {
         code: 200,
         message: "qr code generated",
-        data: {
-          qrCode: result.qr,
-        },
+        data: { qrCode: result.qr },
       };
     }
-    return {
-      code: 500,
-      message: `unknown status: ${result.status}`,
-      data: null,
-    };
+
+    return { code: 500, message: `unknown status: ${result.status}`, data: null };
   }
   // src/services/account.js
 

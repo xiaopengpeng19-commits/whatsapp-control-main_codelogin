@@ -65,7 +65,7 @@ function handleQRCode(sock, account, qr, ctx) {
   logger.info(`[${account.phoneNumber}] QR码已生成`);
   updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR, "disconnected");
   if (resolveFunc && typeof resolveFunc === "function") {
-    resolveFunc({ status: "waiting_qr", qr, accountId });
+    resolveFunc({ status: "waiting_qr", qr, accountId, sock });
   }
 }
 

@@ -82,7 +82,7 @@ class AccountController {
     try {
       const { proxy } = ctx.request.body;
 
-      let account = {
+      const account = {
         id: snowflake.nextId().toString(),
         mark: "",
         account_status: "unconnected",
