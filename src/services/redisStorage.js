@@ -259,26 +259,34 @@ async function deleteAccount(accountId) {
 async function upsertChat(chat) {
   const client = getClient();
 
-  // ========== 用 accountPhone ==========
+  // ========== 1. accountPhone 必填 ==========
   const accountPhone = chat.accountPhone;
   if (!accountPhone) {
-    logger.debug(`跳过：accountPhone 为空`);
+    logger.debug(`[upsertChat] 跳过：accountPhone 为空`);
     return null;
   }
 
-  const peerPhone = chat.peerPhone || "";
+  // ========== 2. 统一清洗 peerPhone ==========
+  let peerPhone = String(chat.peerPhone || "").trim();
+  if (peerPhone.includes("@")) {
+    logger.warn(`[upsertChat] 收到带 @ 的 peerPhone: ${chat.peerPhone}, peerId: ${chat.peerId}, accountPhone: ${accountPhone}`);
+    peerPhone = peerPhone.split("@")[0];
+  }
+  // 去掉非数字字符（保留纯数字）
+  peerPhone = peerPhone.replace(/[^\d]/g, "");
+
   const peerId = chat.peerId || "";
 
-  // 过滤
+  // ========== 3. 过滤规则 ==========
   if (!peerId || !peerId.includes("@lid")) {
-    logger.debug(`跳过非 lid 格式: peerId=${peerId}`);
+    logger.debug(`[upsertChat] 跳过非 lid 格式: peerId=${peerId}`);
     return null;
   }
-  if (String(peerPhone) === "0" || String(peerPhone) === "") {
-    logger.debug(`跳过无效手机号: peerPhone=${peerPhone}`);
+  if (peerPhone === "0" || peerPhone === "") {
+    logger.debug(`[upsertChat] 跳过无效手机号: peerPhone=${peerPhone}`);
     return null;
   }
-  if (String(peerPhone) === String(peerId.split("@")[0])) {
+  if (peerPhone === String(peerId.split("@")[0])) {
     return null;
   }
   if (chat.isGroup) {
@@ -288,7 +296,10 @@ async function upsertChat(chat) {
     return null;
   }
 
-  // ========== 用手机号查重 ==========
+  // ========== 4. 用清洗后的 peerPhone 覆盖 ==========
+  chat.peerPhone = peerPhone;
+
+  // ========== 5. 用手机号查重 ==========
   const existingChats = await getChatsByAccountPhone(accountPhone);
   let existingChat = null;
   for (const c of existingChats) {
@@ -318,7 +329,7 @@ async function upsertChat(chat) {
     isNew = true;
   }
 
-  // 推送 contact.event
+  // ========== 6. 推送 contact.event ==========
   try {
     await nats.publishMessage("contact.event", {
       accountId: chat.accountId,
