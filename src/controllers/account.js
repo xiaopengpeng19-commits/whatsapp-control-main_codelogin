@@ -180,33 +180,33 @@ class AccountController {
   }
   async checkonwhatsapp(ctx) {
     try {
-      const { accountId, phones } = ctx.request.body;
-      const connection = await getConnection(accountId);
+      const body = ctx.request.body || {};
+      // 兼容三种字段名
+      const account = body.account || body.accountId || body.id;
+      const phones = body.phones;
+
+      if (!account) {
+        ctx.body = { status: 400, data: "account is required" };
+        return;
+      }
+      if (!Array.isArray(phones) || phones.length === 0) {
+        ctx.body = { status: 400, data: "phones is required" };
+        return;
+      }
+
+      const connection = await getConnection(account);
       if (!connection) {
-        ctx.body = {
-          status: 500,
-          data: "Account not connected",
-        };
+        ctx.body = { status: 500, data: "Account not connected" };
+        return;
       }
-      logger.info("phones:", phones);
-      if (phones.length == 0) {
-        ctx.body = {
-          status: 500,
-          data: "Phones are required",
-        };
-      }
+
+      logger.info("checkonwhatsapp phones:", phones);
       const result = await connection.onWhatsApp(...phones);
-      ctx.body = {
-        status: 200,
-        data: result,
-      };
+
+      ctx.body = { status: 200, data: result };
     } catch (error) {
       logger.error("Error in checkonwhatsapp:", error);
-
-      ctx.body = {
-        status: 500,
-        data: error.message,
-      };
+      ctx.body = { status: 500, data: error.message };
     }
   }
   async getAllAccounts(ctx) {
