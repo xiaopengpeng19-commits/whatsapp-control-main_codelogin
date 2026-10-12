@@ -7,11 +7,10 @@ class ConnectionPool {
     this.maxSize = options.maxSize || 150;
     this.minSize = options.minSize || 10;
     this.idleTimeout = options.idleTimeout || 30 * 60 * 1000;
-    this.connections = new Map(); // key = phoneNumber
+    this.connections = new Map();   // key = phoneNumber
     this.isShuttingDown = false;
   }
 
-  // ========== 从连接中提取手机号 ==========
   _getPhoneFromConnection(connection, fallbackKey) {
     try {
       let phone = fallbackKey;
@@ -30,7 +29,6 @@ class ConnectionPool {
     }
   }
 
-  // ========== 获取连接 ==========
   async acquire(phoneNumber, createFn) {
     if (this.connections.has(phoneNumber)) {
       const entry = this.connections.get(phoneNumber);
@@ -48,7 +46,6 @@ class ConnectionPool {
     return this._createConnection(phoneNumber, createFn);
   }
 
-  // ========== 创建连接 ==========
   async _createConnection(phoneNumber, createFn) {
     try {
       const connection = await createFn();
@@ -70,26 +67,12 @@ class ConnectionPool {
     }
   }
 
-  // ========== 释放条目（不关 sock） ==========
+  // ========== 释放条目（不推 NATS，不关 sock） ==========
   release(phoneNumber) {
     if (this.connections.has(phoneNumber)) {
       const entry = this.connections.get(phoneNumber);
       const phone = entry?.phone || phoneNumber;
       this.connections.delete(phoneNumber);
-
-      try {
-        const nats = require("../../config/nats");
-        nats.publishMessage("connection", {
-          accountId: phone,
-          accountPhone: phone,
-          socketStatus: "connected",
-          accountStatus: "offline",
-          updatedAt: new Date().toISOString(),
-        });
-        logger.info(`[连接池] 断开通知已推送 (phone: ${phone})`);
-      } catch (err) {
-        logger.error(`[连接池] 推送失败 (phone: ${phone})`, err);
-      }
 
       logger.info(`[连接池] 释放条目: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
       return true;
@@ -97,7 +80,7 @@ class ConnectionPool {
     return false;
   }
 
-  // ========== 释放并关闭 sock ==========
+  // ========== 释放并关闭 sock（不推 NATS） ==========
   async releaseAndClose(phoneNumber, reason = "") {
     const entry = this.connections.get(phoneNumber);
     if (!entry) return false;
@@ -106,19 +89,6 @@ class ConnectionPool {
     const sock = entry?.connection;
     this.connections.delete(phoneNumber);
 
-    // 推 NATS
-    try {
-      const nats = require("../../config/nats");
-      nats.publishMessage("connection", {
-        accountId: phone,
-        accountPhone: phone,
-        socketStatus: "disconnected",
-        accountStatus: "offline",
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (err) {}
-
-    // 关 sock + 切引用环
     if (sock) {
       try {
         const { releaseSock } = require("./utils");
@@ -142,7 +112,6 @@ class ConnectionPool {
     return this.connections.get(phoneNumber)?.connection || null;
   }
 
-  // ========== 清理空闲连接（只记录，不断开） ==========
   evictIdle() {
     const now = Date.now();
     let idleCount = 0;
@@ -162,7 +131,6 @@ class ConnectionPool {
     return 0;
   }
 
-  // ========== 清空所有连接 ==========
   async clear() {
     logger.info(`[连接池] 清空所有连接...`);
     const { releaseSock } = require("./utils");
@@ -182,7 +150,6 @@ class ConnectionPool {
     logger.info(`[连接池] 清空完成`);
   }
 
-  // ========== 手动设置连接 ==========
   set(phoneNumber, sock) {
     const phone = this._getPhoneFromConnection(sock, phoneNumber);
     this.connections.set(phoneNumber, {
@@ -195,7 +162,6 @@ class ConnectionPool {
     logger.info(`[连接池] 添加连接: ${phone}，当前: ${this.connections.size}/${this.maxSize}`);
   }
 
-  // ========== 健康检查 ==========
   isHealthy(phoneNumber) {
     const entry = this.connections.get(phoneNumber);
     if (!entry) return false;

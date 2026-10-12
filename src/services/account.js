@@ -683,7 +683,25 @@ class AccountService {
 
   async Offline(idorphone) {
     try {
-      await CloseConnection(idorphone);
+      const account = await this.getAccountByPhoneNumberOrId(idorphone);
+      const phoneNumber = account?.phoneNumber || idorphone;
+
+      await CloseConnection(phoneNumber);
+
+      // ★ 推下线状态（凭证还在，socketStatus 仍是 connected）
+      try {
+        const nats = require("../config/nats");
+        await nats.publishMessage("connection", {
+          accountId: phoneNumber,
+          accountPhone: phoneNumber,
+          socketStatus: "connected",
+          accountStatus: "offline",
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        // 忽略
+      }
+
       return { code: 200, message: "offline", data: null };
     } catch (error) {
       return { code: 500, message: error.message, data: null };
