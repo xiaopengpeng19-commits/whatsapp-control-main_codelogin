@@ -3,66 +3,64 @@
 const { Boom } = require("@hapi/boom");
 const { DisconnectReason } = require("@whiskeysockets/baileys");
 const { LOGIN_STATUS } = require("./constants");
-const { cleanupSession } = require("./utils");
+const { cleanupSession, releaseSock } = require("./utils");
 const redisStorage = require("../redisStorage");
 const { conn } = require("../../utils/logger");
 const logger = conn;
 const { getClient } = require("../../config/redis");
 
-// src/services/baileys/connection-handler.js
-
-// ========== 在文件顶部添加辅助函数 ==========
+// ========== 云控通知 ==========
 async function notifyCloud(accountId, phoneNumber, socketStatus, accountStatus) {
   try {
     const nats = require("../../config/nats");
     await nats.publishMessage("connection", {
-      accountId: accountId,
+      accountId: phoneNumber || accountId,
       accountPhone: phoneNumber,
       socketStatus: socketStatus,
       accountStatus: accountStatus,
       updatedAt: new Date().toISOString(),
     });
-    logger.info(`[${accountId}] ✅ 状态已推送给云控: ${socketStatus}`);
+    logger.info(`[${phoneNumber || accountId}] 状态已推送给云控: ${socketStatus}`);
   } catch (error) {
-    logger.error(`[${accountId}] ❌ 推送失败:`, error);
+    logger.error(`[${phoneNumber || accountId}] 推送失败:`, error);
   }
 }
 
+// ========== 更新账号状态 ==========
 async function updateAccountStatus(accountId, phoneNumber, accountStatus, socketStatus) {
   try {
-    logger.info(
-      `[updateAccountStatus] 开始更新账号状态: accountId=${accountId}, phoneNumber=${phoneNumber}, accountStatus=${accountStatus}, socketStatus=${socketStatus}`,
-    );
+    if (!phoneNumber && !accountId) return;
 
     const accountData = {
-      id: accountId,
+      id: accountId || phoneNumber,
       phoneNumber: phoneNumber || null,
       socket_status: socketStatus,
       account_status: accountStatus,
       lastActive: new Date().toISOString(),
     };
 
-    const existing = await redisStorage.getAccountById(accountId);
-    logger.info(`[updateAccountStatus] 账号是否存在: ${!!existing}`);
+    const key = accountId || phoneNumber;
+    const existing = await redisStorage.getAccountById(key);
 
     if (existing) {
-      await redisStorage.updateAccount(accountId, accountData);
-      logger.info(`[updateAccountStatus] 账号已更新: ${accountId}`);
+      await redisStorage.updateAccount(key, accountData);
     } else {
+      // ★ 没号码不创建（防止孤儿）
+      if (!phoneNumber) {
+        logger.debug(`[updateAccountStatus] 跳过：无 phoneNumber (id=${accountId})`);
+        return;
+      }
       await redisStorage.upsertAccount(accountData);
-      logger.info(`[updateAccountStatus] 账号已创建: ${accountId}`);
     }
-
-    logger.info(`[updateAccountStatus] 更新完成: accountId=${accountId}, accountStatus=${accountStatus}, socketStatus=${socketStatus}`);
   } catch (error) {
-    logger.error(`[updateAccountStatus] 更新账号状态失败: accountId=${accountId}`, error);
+    logger.error(`[updateAccountStatus] 失败: accountId=${accountId}`, error);
   }
 }
 
 // ========== 二维码模式 ==========
 function handleQRCode(sock, account, qr, ctx) {
   const { accountId, resolveFunc } = ctx;
-  logger.info(`[${account.phoneNumber}] QR码已生成`);
+  logger.info(`[${account.phoneNumber || accountId}] QR码已生成`);
   updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.WAITING_QR, "disconnected");
   if (resolveFunc && typeof resolveFunc === "function") {
     resolveFunc({ status: "waiting_qr", qr, accountId, sock });
@@ -70,29 +68,29 @@ function handleQRCode(sock, account, qr, ctx) {
 }
 
 // ========== 连接关闭 ==========
-function handleConnectionClose(sock, account, lastDisconnect, ctx) {
+async function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   const { accountId, resolveFunc, rejectFunc, usePairCode, onConnected, connectionPool } = ctx;
 
   const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error?.output?.statusCode : null;
   const isManualClose = sock._manualClose === true;
+  const poolKey = account.phoneNumber ? String(account.phoneNumber) : String(accountId);
 
-  logger.info(`[${account.phoneNumber}] ========== 连接关闭 ==========`);
-  logger.info(`[${account.phoneNumber}] statusCode: ${statusCode}`);
-  logger.info(`[${account.phoneNumber}] isManualClose: ${isManualClose}`);
-  logger.info(`[${account.phoneNumber}] error: ${lastDisconnect?.error?.message || "无"}`);
+  logger.info(`[${account.phoneNumber || accountId}] ========== 连接关闭 ==========`);
+  logger.info(`[${account.phoneNumber || accountId}] statusCode: ${statusCode}`);
+  logger.info(`[${account.phoneNumber || accountId}] isManualClose: ${isManualClose}`);
+  logger.info(`[${account.phoneNumber || accountId}] error: ${lastDisconnect?.error?.message || "无"}`);
 
   if (sock._closeHandled) {
-    logger.debug(`[${account.phoneNumber}] 已处理关闭事件，跳过`);
     return;
   }
   sock._closeHandled = true;
+
   // 手动关闭
   if (isManualClose) {
-    if (connectionPool && connectionPool.has(accountId)) {
-      connectionPool.release(accountId);
-      logger.info(`[${account.phoneNumber}] 已从连接池释放`);
+    if (connectionPool && connectionPool.has(poolKey)) {
+      await connectionPool.releaseAndClose(poolKey, `[${account.phoneNumber || accountId}] 手动关闭`);
     }
-    logger.info(`[${account.phoneNumber}] 手动关闭连接`);
+    logger.info(`[${account.phoneNumber || accountId}] 手动关闭连接`);
     if (rejectFunc && typeof rejectFunc === "function") {
       const err = new Error("手动关闭");
       err.code = 200;
@@ -104,7 +102,7 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 
   // 515 重启
   if (statusCode === 515) {
-    logger.info(`[${account.phoneNumber}] 配对码登录成功，需要重启连接 (515)`);
+    logger.info(`[${account.phoneNumber || accountId}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
     createConnection(account, onConnected, false)
       .then((result) => {
@@ -136,18 +134,24 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     const statusMsg = statusCode === 401 ? "expired" : "banned";
     const statusText = statusCode === 401 ? "凭证过期" : "账号封禁";
 
-    logger.warn(`[${account.phoneNumber}] ${statusText} (${statusCode})`);
+    logger.warn(`[${account.phoneNumber || accountId}] ${statusText} (${statusCode})`);
 
-    // 1. 推送状态
     notifyCloud(accountId, account.phoneNumber, "disconnected", statusMsg);
 
-    // 2. 从连接池释放（不调用 sock.end()，因为连接已经断了）
-    if (connectionPool && connectionPool.has(accountId)) {
-      connectionPool.release(accountId);
-      logger.info(`[${account.phoneNumber}] 已从连接池释放`);
+    // 写 Redis
+    try {
+      await updateAccountStatus(accountId, account.phoneNumber, statusMsg, "disconnected");
+    } catch (e) {}
+
+    // 释放 sock
+    try {
+      await releaseSock(sock, `[${account.phoneNumber || accountId}] ${statusText} ${statusCode}`);
+    } catch (e) {}
+
+    if (connectionPool && connectionPool.has(poolKey)) {
+      await connectionPool.releaseAndClose(poolKey, `[${account.phoneNumber || accountId}] ${statusText}`);
     }
 
-    // 3. 直接返回，不调用 CloseConnection
     if (rejectFunc && typeof rejectFunc === "function") {
       const err = new Error(`${statusText}，请重新登录 (${statusCode})`);
       err.code = statusCode;
@@ -158,11 +162,17 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   }
 
   // 其他错误
-  logger.warn(`[${account.phoneNumber}] 连接断开 (statusCode: ${statusCode})，保留账号状态，等待重试`);
-  notifyCloud(accountId, account.phoneNumber, "connected", "failed"); // ✅ 新增
-  if (connectionPool && connectionPool.has(accountId)) {
-    connectionPool.release(accountId);
+  logger.warn(`[${account.phoneNumber || accountId}] 连接断开 (statusCode: ${statusCode})`);
+  notifyCloud(accountId, account.phoneNumber, "connected", "failed");
+
+  try {
+    await releaseSock(sock, `[${account.phoneNumber || accountId}] 连接断开 statusCode=${statusCode}`);
+  } catch (e) {}
+
+  if (connectionPool && connectionPool.has(poolKey)) {
+    await connectionPool.releaseAndClose(poolKey, `[${account.phoneNumber || accountId}] 连接断开`);
   }
+
   if (rejectFunc && typeof rejectFunc === "function") {
     const err = new Error(`连接断开: ${lastDisconnect?.error?.message || "网络异常"}`);
     err.code = statusCode || 500;
@@ -172,8 +182,6 @@ function handleConnectionClose(sock, account, lastDisconnect, ctx) {
 }
 
 // ========== 连接打开 ==========
-// src/services/baileys/connection-handler.js
-
 function handleConnectionOpen(sock, account, ctx) {
   const { accountId, resolveFunc, onConnected, connectionPool } = ctx;
 
@@ -190,24 +198,22 @@ function handleConnectionOpen(sock, account, ctx) {
   sock.account_status = LOGIN_STATUS.CONNECTED;
   sock.lastActiveTime = new Date();
 
-  // ========== 判断是否是新连接 ==========
-  const isNewConnection = !connectionPool.has(accountId);
+  // ★ 池 key 用号码
+  const poolKey = phoneNumber ? String(phoneNumber) : String(accountId);
+  const isNewConnection = !connectionPool.has(poolKey);
 
   updateAccountStatus(accountId, phoneNumber, LOGIN_STATUS.CONNECTED, "connected");
-  connectionPool.set(accountId, sock);
+  connectionPool.set(poolKey, sock);
 
-  logger.info(`[${accountId}] WhatsApp 连接成功: ${phoneNumber}`);
+  logger.info(`[${phoneNumber || accountId}] WhatsApp 连接成功: ${phoneNumber}`);
 
-  // ========== 只有新连接才推送（扫码登录）==========
   if (isNewConnection) {
     notifyCloud(accountId, phoneNumber, "connected", "normal");
-    logger.info(`[${accountId}] ✅ 新连接上线通知已推送`);
-  } else {
-    logger.debug(`[${accountId}] 连接已存在，跳过推送`);
+    logger.info(`[${phoneNumber || accountId}] 新连接上线通知已推送`);
   }
 
   if (onConnected) {
-    onConnected(sock).catch((err) => logger.error(`[${accountId}] 回调执行失败:`, err));
+    onConnected(sock).catch((err) => logger.error(`[${phoneNumber || accountId}] 回调执行失败:`, err));
   }
 
   if (resolveFunc && typeof resolveFunc === "function") {
@@ -220,25 +226,13 @@ function handleConnectionOpen(sock, account, ctx) {
   }
 }
 
-// src/services/baileys/connection-handler.js
-
-// connection-handler.js
-
+// ========== 事件分发 ==========
 function createConnectionHandler(sock, account, ctx) {
   const { usePairCode } = ctx;
   let resolved = false;
 
   return (update) => {
     const { connection, lastDisconnect, qr } = update;
-    logger.info(`[${account.phoneNumber}] connection.update 数据:`, JSON.stringify(update, null, 2));
-    // if (usePairCode) {
-    //   if (resolved) {
-    //     logger.debug(`[${account.phoneNumber}] 已处理，忽略重复 qr`);
-    //     return;
-    //   }
-    //   resolved = true;
-    //   return handleQRCodeForPairing(sock, account, ctx);
-    // }
 
     if (qr && !usePairCode) {
       if (resolved) return;
@@ -247,7 +241,6 @@ function createConnectionHandler(sock, account, ctx) {
     }
 
     if (connection === "close") {
-      logger.info(`[${account.phoneNumber}] ========== 连接关闭 ==========`);
       return handleConnectionClose(sock, account, lastDisconnect, ctx);
     }
 
@@ -257,7 +250,7 @@ function createConnectionHandler(sock, account, ctx) {
   };
 }
 
-// ========== 新增：Redis 缓存配对码 ==========
+// ========== 配对码缓存（保留，给配对码登录用）==========
 async function getCachedPairCode(phoneNumber) {
   const key = `paircode:${phoneNumber}`;
   try {
@@ -280,79 +273,6 @@ async function setCachedPairCode(phoneNumber, code) {
   } catch (error) {
     logger.error(`[setCachedPairCode] 设置缓存失败:`, error);
   }
-}
-// ========== 修改 handleQRCodeForPairing ==========
-function handleQRCodeForPairing(sock, account, ctx) {
-  const { accountId, resolveFunc, rejectFunc } = ctx;
-  const phoneNumber = String(account.phoneNumber);
-  logger.info(`[${phoneNumber}] 请求匹配码`);
-  // ========== 1. 先检查 Redis 缓存 ==========
-  getCachedPairCode(phoneNumber)
-    .then((cached) => {
-      if (cached) {
-        logger.info(`[${phoneNumber}] 使用缓存的配对码: ${cached.code}`);
-        if (resolveFunc) {
-          resolveFunc({
-            status: "waiting_pair_code",
-            code: cached.code,
-            accountId,
-            phoneNumber: account.phoneNumber,
-          });
-        }
-        return;
-      }
-
-      // ========== 2. 没有缓存，请求新的 ==========
-      sock
-        .requestPairingCode(phoneNumber)
-        .then((code) => {
-          logger.info(`[${phoneNumber}] 配对码生成成功: ${code}`);
-
-          // ========== 3. 存入 Redis，5 分钟过期 ==========
-          setCachedPairCode(phoneNumber, code).catch((err) => {
-            logger.error(`[${phoneNumber}] 缓存配对码失败:`, err);
-          });
-
-          if (resolveFunc) {
-            resolveFunc({
-              status: "waiting_pair_code",
-              code,
-              accountId,
-              phoneNumber: account.phoneNumber,
-            });
-          }
-        })
-        .catch((err) => {
-          logger.error(`[${phoneNumber}] 配对码请求失败:`, err);
-          if (rejectFunc) {
-            rejectFunc(err);
-          }
-        });
-    })
-    .catch((err) => {
-      logger.error(`[${phoneNumber}] 检查缓存失败:`, err);
-      // 缓存失败，直接请求
-      sock
-        .requestPairingCode(phoneNumber)
-        .then((code) => {
-          logger.info(`[${phoneNumber}] 配对码生成成功: ${code}`);
-          setCachedPairCode(phoneNumber, code).catch(() => {});
-          if (resolveFunc) {
-            resolveFunc({
-              status: "waiting_pair_code",
-              code,
-              accountId,
-              phoneNumber: account.phoneNumber,
-            });
-          }
-        })
-        .catch((err) => {
-          logger.error(`[${phoneNumber}] 配对码请求失败:`, err);
-          if (rejectFunc) {
-            rejectFunc(err);
-          }
-        });
-    });
 }
 
 module.exports = {

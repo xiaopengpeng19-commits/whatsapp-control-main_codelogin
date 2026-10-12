@@ -15,7 +15,7 @@ const nats = require("../../config/nats");
 const snowflake = require("../../utils/snowflake");
 const { getAccountSyncFlag, setAccountSyncFlag } = require("../redisStorage");
 const { LOGIN_STATUS, groupCache, msgRetryCounterCache } = require("./constants");
-const { getSessionDir, createProxyAgent, createBaileysLogger } = require("./utils");
+const { getSessionDir, createProxyAgent, createBaileysLogger, releaseSock } = require("./utils");
 const { createConnectionHandler, updateAccountStatus } = require("./connection-handler");
 const {
   handleIncomingMessage,
@@ -28,11 +28,10 @@ const {
 const logger = conn;
 
 // ==========================================
-// 连接池（单例）
+// 连接池
 // ==========================================
 const ConnectionPool = require("./connection-pool");
 
-// 从环境变量读取配置
 const MAX_CONNECTIONS = parseInt(process.env.MAX_CONNECTIONS) || 150;
 const MIN_CONNECTIONS = parseInt(process.env.MIN_CONNECTIONS) || 10;
 const IDLE_TIMEOUT_MINUTES = parseInt(process.env.IDLE_TIMEOUT_MINUTES) || 30;
@@ -46,12 +45,11 @@ const connectionPool = new ConnectionPool({
 // ==========================================
 // 创建连接
 // ==========================================
-// src/services/baileys/connect.js
-
 async function createConnection(account, onConnected = null, usePairCode = false) {
   const accountId = account.id;
   let resolveFunc, rejectFunc;
-  let sock = null; // ← 提前声明，方便在 catch 中关闭
+  let sock = null;
+  let timeoutId = null;
 
   const loginPromise = new Promise((resolve, reject) => {
     resolveFunc = resolve;
@@ -64,7 +62,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     const proxyAgent = createProxyAgent(account.proxy);
 
-    logger.info(`[${account.phoneNumber}] 使用 [${account.proxy}]`);
+    logger.info(`[${account.phoneNumber || account.id}] 使用 [${account.proxy}]`);
 
     const baileysLogger = createBaileysLogger();
     if (!baileysLogger.trace) {
@@ -91,7 +89,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
-      browser: Browsers.appropriate('Chrome'),//["Ubuntu", "Chrome", "20.0.04"],
+      browser: ["Ubuntu", "Chrome", "20.0.04"],
       getMessage: async (key) => {
         try {
           const stored = await redisStorage.getMessageById(key.id);
@@ -111,20 +109,26 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
     const ctx = {
       accountId,
-      resolveFunc,
-      rejectFunc,
       usePairCode,
       onConnected,
       saveCreds,
       connectionPool,
       _resolved: false,
+      resolveFunc: (val) => {
+        ctx._resolved = true;
+        resolveFunc(val);
+      },
+      rejectFunc: (err) => {
+        ctx._resolved = true;
+        rejectFunc(err);
+      },
     };
     const connectionHandler = createConnectionHandler(sock, account, ctx);
 
     sock.ev.process(async (events) => {
       const eventKeys = Object.keys(events);
       if (eventKeys.length > 0) {
-        logger.info(`[${account.phoneNumber}] 触发事件: ${JSON.stringify(eventKeys)}`);
+        logger.info(`[${account.phoneNumber || accountId}] 触发事件: ${JSON.stringify(eventKeys)}`);
       }
 
       if (events["creds.update"]) {
@@ -154,9 +158,8 @@ async function createConnection(account, onConnected = null, usePairCode = false
               isGroup: phoneNumber?.includes("g.us") || false,
               contactAdded: true,
             });
-            logger.info(`[${account.phoneNumber}] ✅ 联系人已保存: ${phoneNumber}`);
           } catch (error) {
-            logger.error(`[${accountId}] ❌ 保存联系人失败:`, error);
+            logger.error(`[${accountId}] 保存联系人失败:`, error);
           }
         }
       }
@@ -164,14 +167,12 @@ async function createConnection(account, onConnected = null, usePairCode = false
       if (events["messaging-history.set"]) {
         if (account.phoneNumber) {
           await setAccountSyncFlag(account.phoneNumber, true);
-          logger.info(`[${account.phoneNumber}] 历史同步完成，已标记 ${account.phoneNumber}`);
         }
         await handleMessagingHistory(events, accountId, account.phoneNumber);
       }
 
       if (events["messages.upsert"]) {
         const upsert = events["messages.upsert"];
-        logger.info(`[${account.phoneNumber}] messages.upsert 数据:`, JSON.stringify(upsert, null, 2));
         if (upsert.type === "notify" || upsert.type === "append") {
           sock.lastActiveTime = new Date();
           for (const msg of upsert.messages || []) {
@@ -198,7 +199,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
       }
 
       if (events["chats.upsert"]) {
-        logger.info(`[${account.phoneNumber}] chats.upsert 数据:`, JSON.stringify(events["chats.upsert"], null, 2));
         await handleChatsUpsert(events["chats.upsert"], accountId, account.phoneNumber);
       }
 
@@ -240,7 +240,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["group-participants.update"]) {
         const update = events["group-participants.update"];
-        logger.info(`[${account.phoneNumber}] group-participants.update:`, JSON.stringify(update, null, 2));
         await nats.publishMessage("group.event", {
           accountId: accountId,
           accountPhone: account.phoneNumber,
@@ -257,7 +256,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["groups.update"]) {
         const updates = events["groups.update"];
-        logger.info(`[${account.phoneNumber}] groups.update:`, JSON.stringify(updates, null, 2));
         for (const update of updates) {
           await nats.publishMessage("group.event", {
             accountId: accountId,
@@ -276,7 +274,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["groups.upsert"]) {
         const groups = events["groups.upsert"];
-        logger.info(`[${account.phoneNumber}] groups.upsert:`, JSON.stringify(groups, null, 2));
         for (const group of groups) {
           await nats.publishMessage("group.event", {
             accountId: accountId,
@@ -296,25 +293,24 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
     // ========== 超时处理 ==========
     const timeoutDuration = usePairCode ? 60000 : 120000;
-    const timeoutId = setTimeout(() => {
-      logger.error(`[${account.phoneNumber}] 登录超时`);
+    timeoutId = setTimeout(() => {
+      if (ctx._resolved) return;
+      ctx._resolved = true;
 
-      // ========== 新增：关闭 sock ==========
+      logger.error(`[${account.phoneNumber || accountId}] 登录超时`);
+
       try {
-        if (sock && sock.end) {
-          sock.end().catch(() => {});
-          logger.info(`[${account.phoneNumber}] 超时后已关闭 sock`);
-        }
+        releaseSock(sock, `[${account.phoneNumber || accountId}] 登录超时`).catch(() => {});
+        logger.info(`[${account.phoneNumber || accountId}] 超时后已释放 sock`);
       } catch (e) {
-        logger.error(`[${account.phoneNumber}] 关闭 sock 失败:`, e);
+        logger.error(`[${account.phoneNumber || accountId}] 释放 sock 失败:`, e);
       }
 
-      const isActuallyOnline = sock.user && sock.user.id;
+      const isActuallyOnline = sock?.account_status === LOGIN_STATUS.CONNECTED;
       if (!isActuallyOnline) {
-        sock.account_status = LOGIN_STATUS.FAILED;
         updateAccountStatus(accountId, account.phoneNumber, LOGIN_STATUS.FAILED, "disconnected");
       } else {
-        logger.warn(`[${account.phoneNumber}] 登录超时，但账号仍在线`);
+        logger.warn(`[${account.phoneNumber || accountId}] 登录超时，但账号仍在线`);
       }
 
       if (rejectFunc && typeof rejectFunc === "function") {
@@ -344,16 +340,15 @@ async function createConnection(account, onConnected = null, usePairCode = false
     clearTimeout(timeoutId);
     return result;
   } catch (error) {
-    logger.error(`[${account.phoneNumber}] 创建连接失败:`, error);
+    if (timeoutId) clearTimeout(timeoutId);
 
-    // ========== 新增：异常时关闭 sock ==========
+    logger.error(`[${account.phoneNumber || accountId}] 创建连接失败:`, error);
+
     try {
-      if (sock && sock.end) {
-        sock.end().catch(() => {});
-        logger.info(`[${account.phoneNumber}] 异常后已关闭 sock`);
-      }
+      await releaseSock(sock, `[${account.phoneNumber || accountId}] createConnection catch`);
+      logger.info(`[${account.phoneNumber || accountId}] 异常后已释放 sock`);
     } catch (e) {
-      logger.error(`[${account.phoneNumber}] 关闭 sock 失败:`, e);
+      logger.error(`[${account.phoneNumber || accountId}] 释放 sock 失败:`, e);
     }
 
     return { status: "failed", error: error.message };
@@ -366,28 +361,28 @@ async function createConnection(account, onConnected = null, usePairCode = false
 async function getConnection(identifier, callback = null, proxyOverride = null, force = false) {
   const accountService = require("../account");
 
-  // ========== 先获取账号，拿到 accountId ==========
   const account = await accountService.getAccountByPhoneNumberOrId(identifier);
   if (!account) {
     logger.error(`[${identifier}] 账号不存在`);
     return null;
   }
 
-  // ========== 用 accountId 查连接池 ==========
-  if (connectionPool.has(account.id)) {
-    const sock = connectionPool.get(account.id);
+  // ★ 池 key 用号码
+  const poolKey = account.phoneNumber ? String(account.phoneNumber) : String(account.id);
+
+  if (connectionPool.has(poolKey)) {
+    const sock = connectionPool.get(poolKey);
     if (sock?.user) {
       return sock;
     }
-    connectionPool.release(account.id);
+    // user 为空 → 释放旧 sock
+    await connectionPool.releaseAndClose(poolKey, `[getConnection] user empty`);
   }
 
-  // 连接池没有
   if (!force) {
     return null;
   }
 
-  // 检查账号状态
   if (account.account_status === "expired" || account.account_status === "banned") {
     logger.warn(`[${identifier}] 账号已失效 (${account.account_status})，跳过`);
     return null;
@@ -397,8 +392,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     account.proxy = proxyOverride;
   }
 
-  // 创建连接
-  return connectionPool.acquire(account.id, async () => {
+  return connectionPool.acquire(poolKey, async () => {
     const result = await createConnection(account, callback);
     if (result?.status === "connected") {
       return result.sock;
@@ -410,15 +404,9 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
 // ==========================================
 // 关闭连接
 // ==========================================
-async function closeConnection(accountId) {
-  if (connectionPool.has(accountId)) {
-    const sock = connectionPool.get(accountId);
-    if (sock) {
-      sock._manualClose = true;
-      await sock.end();
-    }
-    connectionPool.release(accountId);
-    logger.info(`[${account.phoneNumber}] 连接已关闭`);
+async function closeConnection(poolKey) {
+  if (connectionPool.has(poolKey)) {
+    await connectionPool.releaseAndClose(poolKey, `closeConnection ${poolKey}`);
     return true;
   }
   return false;
@@ -426,16 +414,15 @@ async function closeConnection(accountId) {
 
 async function CloseConnection(idOrPhone) {
   try {
-    if (connectionPool.has(idOrPhone)) {
-      return await closeConnection(idOrPhone);
-    }
     const accountService = require("../account");
     const account = await accountService.getAccountByPhoneNumberOrId(idOrPhone);
-    if (account && connectionPool.has(account.id)) {
-      return await closeConnection(account.id);
+    const poolKey = account?.phoneNumber ? String(account.phoneNumber) : String(idOrPhone);
+
+    if (connectionPool.has(poolKey)) {
+      return await closeConnection(poolKey);
     }
     logger.info(`[${idOrPhone}] 连接不存在，已是离线状态`);
-    return true; // ← 改成 true
+    return true;
   } catch (error) {
     logger.error(`[${idOrPhone}] 下线失败:`, error);
     return false;
@@ -443,10 +430,10 @@ async function CloseConnection(idOrPhone) {
 }
 
 // ==========================================
-// 获取连接状态
+// 连接状态
 // ==========================================
-function getConnectionStatus(accountId) {
-  const entry = connectionPool.connections.get(accountId);
+function getConnectionStatus(phoneNumber) {
+  const entry = connectionPool.connections.get(phoneNumber);
   return entry?.connection?.account_status || null;
 }
 
@@ -458,7 +445,7 @@ function getAllConnections() {
 // 空闲清理
 // ==========================================
 async function intervalStopIdelConnection() {
-  const idleCount = connectionPool.evictIdle(); // 只记录，不断开
+  const idleCount = connectionPool.evictIdle();
   return idleCount;
 }
 
@@ -472,7 +459,7 @@ async function sendRestartNotification() {
       timestamp: new Date().toISOString(),
       message: "WhatsApp service has been restarted",
     });
-    logger.info("✅ 重启通知已发送到 NATS");
+    logger.info("重启通知已发送到 NATS");
   } catch (error) {
     logger.error("发送重启通知失败:", error);
   }
