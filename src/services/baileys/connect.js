@@ -91,7 +91,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: true,
-      browser: ["Ubuntu", "Chrome", "20.0.04"],
+      browser: Browsers.appropriate('Chrome'),//["Ubuntu", "Chrome", "20.0.04"],
       getMessage: async (key) => {
         try {
           const stored = await redisStorage.getMessageById(key.id);
