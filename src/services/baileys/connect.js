@@ -82,7 +82,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       maxReconnectAttempts: 0,
       agent: proxyAgent,
       fetchAgent: proxyAgent,
-      shouldSyncHistoryMessage: () => false,//避免大内存崩溃
+      shouldSyncHistoryMessage: () => true,
       syncFullHistory: false,
       msgRetryCounterCache,
       connectTimeoutMs: 120000,
