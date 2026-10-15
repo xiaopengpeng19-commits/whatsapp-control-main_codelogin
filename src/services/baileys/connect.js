@@ -43,6 +43,12 @@ const connectionPool = new ConnectionPool({
 });
 
 // ==========================================
+// 登录中的号码（防并发创建）
+// phoneNumber → true
+// ==========================================
+const pendingConnections = new Map();
+
+// ==========================================
 // 创建连接
 // ==========================================
 async function createConnection(account, onConnected = null, usePairCode = false) {
@@ -370,9 +376,11 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
   // ★ 池 key 用号码
   const poolKey = account.phoneNumber ? String(account.phoneNumber) : String(account.id);
 
+  // 1. 池里有 → 直接返回
   if (connectionPool.has(poolKey)) {
     const sock = connectionPool.get(poolKey);
     if (sock?.user) {
+      logger.debug(`[${poolKey}] 池中已有连接，复用`);
       return sock;
     }
     // user 为空 → 释放旧 sock
@@ -383,6 +391,13 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     return null;
   }
 
+  // ★ 2. 有 pending → 直接返回，不等待，不创建
+  if (pendingConnections.has(poolKey)) {
+    logger.info(`[${poolKey}] 连接正在进行中，忽略本次请求`);
+    return null;
+  }
+
+  // 3. 检查账号状态
   if (account.account_status === "expired" || account.account_status === "banned") {
     logger.warn(`[${identifier}] 账号已失效 (${account.account_status})，跳过`);
     return null;
@@ -392,13 +407,24 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     account.proxy = proxyOverride;
   }
 
-  return connectionPool.acquire(poolKey, async () => {
-    const result = await createConnection(account, callback);
-    if (result?.status === "connected") {
-      return result.sock;
-    }
-    throw new Error(result?.error || "连接失败");
-  });
+  // 4. 标记「登录中」
+  pendingConnections.set(poolKey, true);
+
+  try {
+    const conn = await connectionPool.acquire(poolKey, async () => {
+      const result = await createConnection(account, callback);
+      if (result?.status === "connected") {
+        return result.sock;
+      }
+      throw new Error(result?.error || "连接失败");
+    });
+    return conn;
+  } catch (error) {
+    throw error;
+  } finally {
+    // 5. 连接结束（成功/失败）→ 清除标记
+    pendingConnections.delete(poolKey);
+  }
 }
 
 // ==========================================
@@ -442,6 +468,13 @@ function getAllConnections() {
 }
 
 // ==========================================
+// 检查是否登录中（供 Online 使用）
+// ==========================================
+function isConnecting(identifier) {
+  return pendingConnections.has(String(identifier));
+}
+
+// ==========================================
 // 空闲清理
 // ==========================================
 async function intervalStopIdelConnection() {
@@ -475,6 +508,7 @@ module.exports = {
   CloseConnection,
   getAllConnections,
   getConnectionStatus,
+  isConnecting,
   intervalStopIdelConnection,
   sendRestartNotification,
   LOGIN_STATUS,
