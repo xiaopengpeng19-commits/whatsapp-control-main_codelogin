@@ -157,32 +157,15 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`🚀 [57] 服务器启动完成，端口: ${PORT}`);
   logger.info(`Server running on port ${PORT}`);
-  logger.info(`Swagger API documentation available at http://localhost:${PORT}/api-docs`);
-
-  // Set up interval to check and disconnect idle connections every 15 minutes
-  console.log("🚀 [58] 设置空闲连接检查器...");
-
-  setInterval(
-    async () => {
-      try {
-        await baileysConnect.intervalStopIdelConnection();
-      } catch (error) {
-        logger.error("Error checking idle connections:", error);
-      }
-    },
-    CHECK_INTERVAL_MINUTES * 60 * 1000,
-  );
-  logger.info(`🔄 空闲连接检查已启动 (间隔: ${CHECK_INTERVAL_MINUTES}分钟)`);
-
-  // 发送重启通知
-  console.log("🚀 [60] 发送重启通知...");
+  
+  // 发送重启通知 (原有的)
   setTimeout(() => {
     sendRestartNotification().catch(console.error);
   }, 2000);
-  console.log("🚀 [61] 重启通知已发送");
 
-  console.log("🚀 [62] 空闲连接检查器已初始化");
-  logger.info("Idle connection checker initialized");
+  // ★ 启动心跳
+  const { startHeartbeat } = require("./src/config/heartbeat");
+  startHeartbeat(10000); // 10秒一次
 });
 
 console.log("🚀 [63] 注册进程信号处理...");
@@ -217,6 +200,31 @@ process.on("unhandledRejection", (reason, promise) => {
   logger.error(`Reason: ${msg}`);
   logger.error(`Stack: ${stack}`);
   logger.error("=====================================================");
+});
+
+// app.js 底部
+
+process.on("SIGINT", async () => {
+  console.log("🚀 [64] 收到 SIGINT，正在关闭...");
+  logger.info("Application shutting down...");
+
+  // ★ 发送停止心跳广播
+  try {
+    const { stopHeartbeat } = require("./src/config/heartbeat");
+    stopHeartbeat();
+    
+    const natsConfig = require("./src/config/nats");
+    await natsConfig.publishMessage("system.heartbeat", {
+      event: "heartbeat",
+      status: "offline",
+      reason: "SIGINT",
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {}
+
+  // Close NATS connection
+  await natsConfig.closeConnection();
+  process.exit(0);
 });
 
 console.log("🚀 [68] app.js 加载完成（等待服务器启动）");
