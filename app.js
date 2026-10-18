@@ -208,10 +208,14 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.log("🚀 [67] 捕获未处理拒绝:", reason);
+  // ★ 绝对不要直接打印 reason 和 promise 对象，只打印文本信息
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : "";
+  
+  console.log("🚀 [67] 捕获未处理拒绝:", msg);
   logger.error("================ UNHANDLED REJECTION ================");
-  logger.error("Reason:", reason);
-  logger.error("Promise:", promise);
+  logger.error(`Reason: ${msg}`);
+  logger.error(`Stack: ${stack}`);
   logger.error("=====================================================");
 });
 
