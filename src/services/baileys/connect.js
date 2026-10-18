@@ -390,7 +390,11 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
   if (!force) {
     return null;
   }
-
+  // ★ 并发限制：如果 pending 队列超过 50 个，直接拒绝，防止瞬间创建太多
+  if (pendingConnections.size > 50) {
+    logger.warn(`[${identifier}] 并发创建连接过多 (${pendingConnections.size})，拒绝创建`);
+    return null;
+  }
   // ★ 2. 有 pending → 直接返回，不等待，不创建
   if (pendingConnections.has(poolKey)) {
     logger.info(`[${poolKey}] 连接正在进行中，忽略本次请求`);

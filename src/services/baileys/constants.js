@@ -1,4 +1,3 @@
-// src/services/baileys/constants.js
 const { NodeCache } = require("@cacheable/node-cache");
 
 const LOGIN_STATUS = {
@@ -11,8 +10,19 @@ const LOGIN_STATUS = {
   BANNED: "banned",
 };
 
-const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false });
-const msgRetryCounterCache = new NodeCache();
+// ★ 强制限制缓存大小，绝不允许无限增长
+const groupCache = new NodeCache({ 
+  stdTTL: 5 * 60, 
+  checkperiod: 60,
+  useClones: false,
+  maxKeys: 5000 
+});
+
+const msgRetryCounterCache = new NodeCache({ 
+  stdTTL: 5 * 60, 
+  checkperiod: 60,
+  maxKeys: 10000 
+});
 
 module.exports = {
   LOGIN_STATUS,
