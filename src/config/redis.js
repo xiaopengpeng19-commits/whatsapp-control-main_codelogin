@@ -46,9 +46,6 @@ function getClient() {
 // Initialize client on module load
 connect().catch((error) => {
   logger.error("Failed to initialize Redis:", error);
-  setTimeout(() => {
-    process.exit(1);
-  }, 1000);
 });
 
 module.exports = {
