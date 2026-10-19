@@ -181,13 +181,16 @@ process.on("SIGINT", async () => {
 });
 console.log("🚀 [65] SIGINT 处理注册完成");
 
-// Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
-  console.log("🚀 [66] 捕获未处理异常:", err.message);
   logger.error("================ UNCAUGHT EXCEPTION ================");
   logger.error(err.message);
   logger.error(err.stack);
   logger.error("====================================================");
+  
+  // 发生未捕获异常时，给日志写入磁盘留出时间，然后重启
+  setTimeout(() => {
+    process.exit(1); 
+  }, 1000);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
