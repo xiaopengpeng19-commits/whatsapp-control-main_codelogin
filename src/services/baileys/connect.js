@@ -369,9 +369,6 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
-// ==========================================
-// 获取连接
-// ==========================================
 async function getConnection(identifier, callback = null, proxyOverride = null, force = false) {
   const accountService = require("../account");
 
@@ -381,35 +378,35 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     return null;
   }
 
-  // ★ 池 key 用号码
   const poolKey = account.phoneNumber ? String(account.phoneNumber) : String(account.id);
 
   // 1. 池里有 → 直接返回
   if (connectionPool.has(poolKey)) {
     const sock = connectionPool.get(poolKey);
     if (sock?.user) {
-      logger.debug(`[${poolKey}] 池中已有连接，复用`);
       return sock;
     }
-    // user 为空 → 释放旧 sock
     await connectionPool.releaseAndClose(poolKey, `[getConnection] user empty`);
   }
 
   if (!force) {
     return null;
   }
-  // ★ 并发限制：如果 pending 队列超过 50 个，直接拒绝，防止瞬间创建太多
-  if (pendingConnections.size > 50) {
-    logger.warn(`[${identifier}] 并发创建连接过多 (${pendingConnections.size})，拒绝创建`);
-    return null;
+
+  // ★ 2. 并发拦截限制（绝对不能加漏！）
+  const MAX_CONCURRENT_CONNECTIONS = 5;  // 扫码时最多同时处理 5 个连接
+  if (pendingConnections.size >= MAX_CONCURRENT_CONNECTIONS) {
+    logger.warn(`[${poolKey}] 并发连接已达上限 ${MAX_CONCURRENT_CONNECTIONS}，忽略本次请求`);
+    return null; 
   }
-  // ★ 2. 有 pending → 直接返回，不等待，不创建
+
+  // ★ 3. 检查该号码是否正在连接中
   if (pendingConnections.has(poolKey)) {
     logger.info(`[${poolKey}] 连接正在进行中，忽略本次请求`);
     return null;
   }
 
-  // 3. 检查账号状态
+  // 4. 检查账号状态
   if (account.account_status === "expired" || account.account_status === "banned") {
     logger.warn(`[${identifier}] 账号已失效 (${account.account_status})，跳过`);
     return null;
@@ -419,7 +416,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     account.proxy = proxyOverride;
   }
 
-  // 4. 标记「登录中」
+  // 5. 标记「登录中」
   pendingConnections.set(poolKey, true);
 
   try {
@@ -434,7 +431,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
   } catch (error) {
     throw error;
   } finally {
-    // 5. 连接结束（成功/失败）→ 清除标记
+    // 6. 连接结束（成功/失败）→ 清除标记
     pendingConnections.delete(poolKey);
   }
 }
