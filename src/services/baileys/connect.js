@@ -88,7 +88,15 @@ async function createConnection(account, onConnected = null, usePairCode = false
       maxReconnectAttempts: 0,
       agent: proxyAgent,
       fetchAgent: proxyAgent,
-      shouldSyncHistoryMessage: () => true,
+      shouldSyncHistoryMessage: (msg) => {
+        // syncType === 2 是 FULL（全量历史），直接拒绝
+        // 避免大批量历史消息一次性进内存
+        if (msg && msg.syncType === 2) {
+          return false;
+        }
+        return true;
+      },
+      syncFullHistory: false,
       syncFullHistory: false,
       msgRetryCounterCache,
       connectTimeoutMs: 120000,
