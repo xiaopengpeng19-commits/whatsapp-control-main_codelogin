@@ -9,6 +9,7 @@ const {
   proto,
 } = require("@whiskeysockets/baileys");
 
+const net = require("net");
 const { conn } = require("../../utils/logger");
 const redisStorage = require("../redisStorage");
 const nats = require("../../config/nats");
@@ -48,6 +49,44 @@ const connectionPool = new ConnectionPool({
 // ==========================================
 const pendingConnections = new Map();
 
+// 检测代理是否连通 (超时时间 2000ms)
+function checkProxyAlive(proxyStr, timeout = 2000) {
+  return new Promise((resolve) => {
+    if (!proxyStr) return resolve(true); // 没代理直接放行
+
+    try {
+      // 解析 socks5://user:pass@ip:port
+      const url = new URL(proxyStr);
+      const host = url.hostname;
+      const port = url.port || 1080;
+
+      const socket = new net.Socket();
+      let connected = false;
+
+      socket.setTimeout(timeout);
+
+      socket.on("connect", () => {
+        connected = true;
+        socket.destroy();
+        resolve(true);
+      });
+
+      socket.on("timeout", () => {
+        socket.destroy();
+        resolve(false);
+      });
+
+      socket.on("error", () => {
+        socket.destroy();
+        resolve(false);
+      });
+
+      socket.connect(port, host);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
 // ==========================================
 // 创建连接
 // ==========================================
@@ -394,10 +433,10 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
   }
 
   // ★ 2. 并发拦截限制（绝对不能加漏！）
-  const MAX_CONCURRENT_CONNECTIONS = 5;  // 扫码时最多同时处理 5 个连接
+  const MAX_CONCURRENT_CONNECTIONS = 5; // 扫码时最多同时处理 5 个连接
   if (pendingConnections.size >= MAX_CONCURRENT_CONNECTIONS) {
     logger.warn(`[${poolKey}] 并发连接已达上限 ${MAX_CONCURRENT_CONNECTIONS}，忽略本次请求`);
-    return null; 
+    return null;
   }
 
   // ★ 3. 检查该号码是否正在连接中
@@ -414,6 +453,15 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
 
   if (proxyOverride) {
     account.proxy = proxyOverride;
+  }
+
+  if (account.proxy) {
+    const isProxyAlive = await checkProxyAlive(account.proxy);
+    if (!isProxyAlive) {
+      logger.warn(`[${poolKey}] 代理不通，拒绝建立连接: ${account.proxy}`);
+      // 直接抛出错误，让云控知道上线失败，不进入 Baileys 内存创建流程
+      throw new Error(`Proxy unreachable: ${account.proxy}`);
+    }
   }
 
   // 5. 标记「登录中」
