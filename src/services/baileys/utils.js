@@ -35,7 +35,7 @@ function createProxyAgent(proxy) {
 
 function createBaileysLogger() {
   const logger = P({
-    level: process.env.BAILEYS_LOG_LEVEL || "fatal",
+    level: "fatal",
     transport: {
       targets: [
         {
