@@ -1,8 +1,30 @@
 // app.js
 console.log("🚀 [1] app.js 开始加载");
-
 require("dotenv").config();
 console.log("🚀 [2] dotenv 加载完成");
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+const originalStderrWrite = process.stderr.write.bind(process.stderr);
+
+// 拦截 stdout
+process.stdout.write = function (chunk, encoding, callback) {
+  const str = chunk.toString();
+  // 拦截密钥大对象打印
+  if (str.includes("Removing old closed session") || str.includes("<Buffer")) {
+    return true; // 直接丢弃
+  }
+  return originalStdoutWrite(chunk, encoding, callback);
+};
+
+// 拦截 stderr
+process.stderr.write = function (chunk, encoding, callback) {
+  const str = chunk.toString();
+  if (str.includes("Removing old closed session") || str.includes("<Buffer")) {
+    return true; // 直接丢弃
+  }
+  return originalStderrWrite(chunk, encoding, callback);
+};
+
+
 
 const Koa = require("koa");
 console.log("🚀 [3] Koa 加载完成");
@@ -186,11 +208,6 @@ process.on("uncaughtException", (err) => {
   logger.error(err.message);
   logger.error(err.stack);
   logger.error("====================================================");
-  
-  // 发生未捕获异常时，给日志写入磁盘留出时间，然后重启
-  setTimeout(() => {
-    process.exit(1); 
-  }, 1000);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
