@@ -4,14 +4,25 @@ require("dotenv").config();
 console.log("🚀 [2] dotenv 加载完成");
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
-
-// 拦截 stdout
 process.stdout.write = function (chunk, encoding, callback) {
   const str = chunk.toString();
-  // 拦截密钥大对象打印
-  if (str.includes("Removing old closed session") || str.includes("<Buffer")) {
-    return true; // 直接丢弃
+
+  // 1. 拦截巨型对象和死循环报错
+  if (
+    str.includes("Removing old closed session") ||
+    str.includes("<Buffer") ||
+    str.includes("Bad MAC Error") ||
+    str.includes("No matching sessions found")
+  ) {
+    return true;
   }
+
+  // ★ 2. 最关键：拦截超过 10KB 的超大单行日志（比如 INITIAL_BOOTSTRAP 里的 Base64 密文）
+  // 只要一行超过了 10000 个字符，绝对是不正常的，直接丢弃，防止把内存吃爆
+  if (str.length > 10000) {
+    return true;
+  }
+
   return originalStdoutWrite(chunk, encoding, callback);
 };
 
@@ -23,8 +34,6 @@ process.stderr.write = function (chunk, encoding, callback) {
   }
   return originalStderrWrite(chunk, encoding, callback);
 };
-
-
 
 const Koa = require("koa");
 console.log("🚀 [3] Koa 加载完成");
@@ -179,7 +188,7 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`🚀 [57] 服务器启动完成，端口: ${PORT}`);
   logger.info(`Server running on port ${PORT}`);
-  
+
   // 发送重启通知 (原有的)
   setTimeout(() => {
     sendRestartNotification().catch(console.error);
@@ -214,7 +223,7 @@ process.on("unhandledRejection", (reason, promise) => {
   // ★ 绝对不要直接打印 reason 和 promise 对象，只打印文本信息
   const msg = reason instanceof Error ? reason.message : String(reason);
   const stack = reason instanceof Error ? reason.stack : "";
-  
+
   console.log("🚀 [67] 捕获未处理拒绝:", msg);
   logger.error("================ UNHANDLED REJECTION ================");
   logger.error(`Reason: ${msg}`);
@@ -232,13 +241,13 @@ process.on("SIGINT", async () => {
   try {
     const { stopHeartbeat } = require("./src/config/heartbeat");
     stopHeartbeat();
-    
+
     const natsConfig = require("./src/config/nats");
     await natsConfig.publishMessage("system.heartbeat", {
       event: "heartbeat",
       status: "offline",
       reason: "SIGINT",
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (err) {}
 
