@@ -49,44 +49,6 @@ const connectionPool = new ConnectionPool({
 // ==========================================
 const pendingConnections = new Map();
 
-// 检测代理是否连通 (超时时间 2000ms)
-function checkProxyAlive(proxyStr, timeout = 2000) {
-  return new Promise((resolve) => {
-    if (!proxyStr) return resolve(true); // 没代理直接放行
-
-    try {
-      // 解析 socks5://user:pass@ip:port
-      const url = new URL(proxyStr);
-      const host = url.hostname;
-      const port = url.port || 1080;
-
-      const socket = new net.Socket();
-      let connected = false;
-
-      socket.setTimeout(timeout);
-
-      socket.on("connect", () => {
-        connected = true;
-        socket.destroy();
-        resolve(true);
-      });
-
-      socket.on("timeout", () => {
-        socket.destroy();
-        resolve(false);
-      });
-
-      socket.on("error", () => {
-        socket.destroy();
-        resolve(false);
-      });
-
-      socket.connect(port, host);
-    } catch (e) {
-      resolve(false);
-    }
-  });
-}
 // ==========================================
 // 创建连接
 // ==========================================
@@ -408,6 +370,43 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
+// 检测代理是否连通 (超时时间 2000ms)
+function checkProxyAlive(proxyStr, timeout = 2000) {
+  return new Promise((resolve) => {
+    try {
+      if (!proxyStr || typeof proxyStr !== "string") return resolve(true);
+
+      let host, port;
+      if (proxyStr.includes("://")) {
+        const url = new URL(proxyStr);
+        host = url.hostname;
+        port = url.port || 1080;
+      } else {
+        const parts = proxyStr.split(":");
+        host = parts[0];
+        port = parts[1] || 1080;
+      }
+      if (!host || !port) return resolve(false);
+
+      const socket = new net.Socket();
+      socket.setTimeout(timeout);
+      socket.on("connect", () => { socket.destroy(); resolve(true); });
+      socket.on("timeout", () => { socket.destroy(); resolve(false); });
+      socket.on("error", () => { socket.destroy(); resolve(false); });
+      socket.connect(port, host);
+    } catch (e) {
+      resolve(false); 
+    }
+  });
+}
+
+// ★★★ 失败冷却记录表 ★★★
+const failureCooldown = new Map();
+const COOLDOWN_MS = 30 * 1000; // 失败后冷却 30 秒
+
+// ==========================================
+// 获取连接（完整替换版）
+// ==========================================
 async function getConnection(identifier, callback = null, proxyOverride = null, force = false) {
   const accountService = require("../account");
 
@@ -417,14 +416,18 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     return null;
   }
 
+  // ★ 池 key 用号码
   const poolKey = account.phoneNumber ? String(account.phoneNumber) : String(account.id);
 
   // 1. 池里有 → 直接返回
   if (connectionPool.has(poolKey)) {
     const sock = connectionPool.get(poolKey);
     if (sock?.user) {
+      // 如果池里有好连接，清空失败记录
+      failureCooldown.delete(poolKey);
       return sock;
     }
+    // user 为空 → 释放旧 sock
     await connectionPool.releaseAndClose(poolKey, `[getConnection] user empty`);
   }
 
@@ -432,20 +435,28 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     return null;
   }
 
-  // ★ 2. 并发拦截限制（绝对不能加漏！）
-  const MAX_CONCURRENT_CONNECTIONS = 5; // 扫码时最多同时处理 5 个连接
-  if (pendingConnections.size >= MAX_CONCURRENT_CONNECTIONS) {
-    logger.warn(`[${poolKey}] 并发连接已达上限 ${MAX_CONCURRENT_CONNECTIONS}，忽略本次请求`);
-    return null;
+  // ★ 2. 检查是否在失败冷却期
+  const blockedUntil = failureCooldown.get(poolKey);
+  if (blockedUntil && Date.now() < blockedUntil) {
+    const remain = Math.ceil((blockedUntil - Date.now()) / 1000);
+    logger.warn(`[${poolKey}] 失败冷却中，剩余 ${remain}s，拒绝本次请求`);
+    return null; 
   }
 
-  // ★ 3. 检查该号码是否正在连接中
+  // ★ 3. 检查并发限制
+  const MAX_CONCURRENT_CONNECTIONS = 5;
+  if (pendingConnections.size >= MAX_CONCURRENT_CONNECTIONS) {
+    logger.warn(`[${poolKey}] 并发连接已达上限 ${MAX_CONCURRENT_CONNECTIONS}，忽略本次请求`);
+    return null; 
+  }
+
+  // ★ 4. 检查是否正在连接中
   if (pendingConnections.has(poolKey)) {
     logger.info(`[${poolKey}] 连接正在进行中，忽略本次请求`);
     return null;
   }
 
-  // 4. 检查账号状态
+  // 5. 检查账号状态
   if (account.account_status === "expired" || account.account_status === "banned") {
     logger.warn(`[${identifier}] 账号已失效 (${account.account_status})，跳过`);
     return null;
@@ -455,31 +466,44 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     account.proxy = proxyOverride;
   }
 
+  // ★ 6. 前置代理探活检测（防止底层底层爆栈）
   if (account.proxy) {
-    const isProxyAlive = await checkProxyAlive(account.proxy);
-    if (!isProxyAlive) {
-      logger.warn(`[${poolKey}] 代理不通，拒绝建立连接: ${account.proxy}`);
-      // 直接抛出错误，让云控知道上线失败，不进入 Baileys 内存创建流程
-      throw new Error(`Proxy unreachable: ${account.proxy}`);
+    try {
+      const isProxyAlive = await checkProxyAlive(account.proxy);
+      if (!isProxyAlive) {
+        logger.warn(`[${poolKey}] 代理不通，拒绝建立连接: ${account.proxy}`);
+        // 代理不通，直接记入冷却池，30秒内不许试
+        failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
+        return null; 
+      }
+    } catch (e) {
+      logger.error(`[${poolKey}] 代理检测异常:`, e);
+      failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
+      return null;
     }
   }
 
-  // 5. 标记「登录中」
+  // 7. 开始建立连接
   pendingConnections.set(poolKey, true);
 
   try {
     const conn = await connectionPool.acquire(poolKey, async () => {
       const result = await createConnection(account, callback);
       if (result?.status === "connected") {
+        // ★ 成功，清空冷却记录
+        failureCooldown.delete(poolKey);
         return result.sock;
       }
+      // ★ 连接失败，记入冷却
+      failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
       throw new Error(result?.error || "连接失败");
     });
     return conn;
   } catch (error) {
+    // ★ 发生异常，也记入冷却
+    failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
     throw error;
   } finally {
-    // 6. 连接结束（成功/失败）→ 清除标记
     pendingConnections.delete(poolKey);
   }
 }
