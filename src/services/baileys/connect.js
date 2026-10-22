@@ -97,13 +97,14 @@ async function createConnection(account, onConnected = null, usePairCode = false
         }
         return true;
       },
+      defaultQueryTimeoutMs: 60000,
       syncFullHistory: false,
       syncFullHistory: false,
       msgRetryCounterCache,
       connectTimeoutMs: 120000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
-      generateHighQualityLinkPreview: true,
+      generateHighQualityLinkPreview: false,
       browser: ["Ubuntu", "Chrome", "20.0.04"],
       getMessage: async (key) => {
         try {
