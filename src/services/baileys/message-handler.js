@@ -70,7 +70,7 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
               await redisStorage.updateMessageStatus(key.id, "read");
             }
           } catch (error) {
-            logger.error(`[${accountPhone}] 批量已读失败:`, error);
+            logger.error(`[${accountPhone}] 批量已读失败: ${error.message || String(error)}`);
           }
           queue.keys = [];
         }
@@ -78,7 +78,17 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       }, delay);
     }
   } catch (error) {
-    logger.error(`[${accountPhone}] 处理消息失败:`, error);
+    // ★ 拦截解密失败，打印出具体是哪个号，并且不往上抛
+    const errMsg = error.message || String(error);
+
+    if (errMsg.includes("Bad MAC") || errMsg.includes("No matching sessions found")) {
+      // 用 warn 级别，或者你自己定制的 logger
+      logger.warn(`[警告] 账号 ${accountPhone || accountId} 发生解密失败 (Bad MAC)，忽略该消息`);
+      return; // 直接返回，阻止错误继续往上冒泡
+    }
+
+    // 如果是其他业务错误，正常打印
+    logger.error(`[${accountPhone || accountId}] 处理消息失败:`, errMsg);
   }
 }
 
@@ -141,7 +151,7 @@ async function handleMessagingHistory(events, accountId, accountPhone) {
       let peerPhone = "";
 
       // 如果 peerId 是 @lid，尝试从其他字段取手机号
-      if (peerId && peerId.includes('@lid')) {
+      if (peerId && peerId.includes("@lid")) {
         // 可能 chat 里有 phoneNumber 字段？
         // 或者从 contacts 里找对应的手机号
         peerPhone = chat.phoneNumber || "";
@@ -152,7 +162,7 @@ async function handleMessagingHistory(events, accountId, accountPhone) {
 
       await redisStorage.upsertChat({
         id: snowflake.nextId(),
-        peerPhone: peerPhone,  // 没有就空着
+        peerPhone: peerPhone, // 没有就空着
         peerId: peerId,
         peerName: chat.name || "",
         accountPhone,
@@ -169,8 +179,8 @@ async function handleMessagingHistory(events, accountId, accountPhone) {
       // 优先用 contact.phoneNumber
       if (contact.phoneNumber) {
         peerPhone = contact.phoneNumber;
-      } else if (peerId && !peerId.includes('@lid')) {
-        peerPhone = peerId.split('@')[0] || "";
+      } else if (peerId && !peerId.includes("@lid")) {
+        peerPhone = peerId.split("@")[0] || "";
       }
 
       await redisStorage.upsertChat({
