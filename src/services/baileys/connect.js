@@ -10,6 +10,9 @@ const {
 } = require("@whiskeysockets/baileys");
 
 const net = require("net");
+const { NodeCache } = require("@cacheable/node-cache"); // ★ 修复：引入 NodeCache
+const { LRUCache } = require("lru-cache"); // ★ 修复：引入 LRU 缓存限制密钥库
+
 const { conn } = require("../../utils/logger");
 const redisStorage = require("../redisStorage");
 const nats = require("../../config/nats");
@@ -45,9 +48,53 @@ const connectionPool = new ConnectionPool({
 
 // ==========================================
 // 登录中的号码（防并发创建）
-// phoneNumber → true
 // ==========================================
 const pendingConnections = new Map();
+
+// ==========================================
+// 失败冷却记录表
+// ==========================================
+const failureCooldown = new Map();
+const COOLDOWN_MS = 30 * 1000; // 失败后冷却 30 秒
+
+// 检测代理是否连通
+function checkProxyAlive(proxyStr, timeout = 2000) {
+  return new Promise((resolve) => {
+    try {
+      if (!proxyStr || typeof proxyStr !== "string") return resolve(true);
+
+      let host, port;
+      if (proxyStr.includes("://")) {
+        const url = new URL(proxyStr);
+        host = url.hostname;
+        port = url.port || 1080;
+      } else {
+        const parts = proxyStr.split(":");
+        host = parts[0];
+        port = parts[1] || 1080;
+      }
+      if (!host || !port) return resolve(false);
+
+      const socket = new net.Socket();
+      socket.setTimeout(timeout);
+      socket.on("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on("timeout", () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.on("error", () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.connect(port, host);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
 
 // ==========================================
 // 创建连接
@@ -76,31 +123,55 @@ async function createConnection(account, onConnected = null, usePairCode = false
       baileysLogger.trace = () => {};
     }
 
-    const hasSynced = account.phoneNumber ? await getAccountSyncFlag(account.phoneNumber) : false;
-    const shouldSync = !hasSynced;
+    // ★ 终极防漏：用 LRU 限制密钥库，最多 1 万条，存活 24 小时，绝不撑爆内存
+    const lruKeys = new LRUCache({ max: 10000, ttl: 1000 * 60 * 60 * 24 });
+    const originalKeys = state.keys;
+    const wrappedKeys = {
+      get: async (type, ids) => {
+        const data = {};
+        await Promise.all(
+          ids.map(async (id) => {
+            const key = `${type}-${id}`;
+            let value = lruKeys.get(key);
+            if (value === undefined) {
+              const originalData = await originalKeys.get(type, [id]);
+              if (originalData[id]) {
+                value = originalData[id];
+                lruKeys.set(key, value);
+              }
+            }
+            if (value) data[id] = value;
+          }),
+        );
+        return data;
+      },
+      set: async (data) => {
+        await originalKeys.set(data);
+        for (const type in data) {
+          for (const id in data[type]) {
+            lruKeys.set(`${type}-${id}`, data[type][id]);
+          }
+        }
+      },
+    };
 
     sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
+        keys: wrappedKeys, // ★ 使用限制后的 keys
       },
       reconnect: false,
       maxReconnectAttempts: 0,
       agent: proxyAgent,
       fetchAgent: proxyAgent,
       shouldSyncHistoryMessage: (msg) => {
-        // syncType === 2 是 FULL（全量历史），直接拒绝
-        // 避免大批量历史消息一次性进内存
-        if (msg && msg.syncType === 2) {
-          return false;
-        }
+        if (msg && msg.syncType === 2) return false; // 拒绝全量历史
         return true;
       },
       defaultQueryTimeoutMs: 60000,
       syncFullHistory: false,
-      syncFullHistory: false,
-      msgRetryCounterCache,
+      msgRetryCounterCache: new NodeCache({ stdTTL: 60 * 10, maxKeys: 5000 }), // ★ 限制最大 5000 条
       connectTimeoutMs: 120000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
@@ -371,42 +442,8 @@ async function createConnection(account, onConnected = null, usePairCode = false
   }
 }
 
-// 检测代理是否连通 (超时时间 2000ms)
-function checkProxyAlive(proxyStr, timeout = 2000) {
-  return new Promise((resolve) => {
-    try {
-      if (!proxyStr || typeof proxyStr !== "string") return resolve(true);
-
-      let host, port;
-      if (proxyStr.includes("://")) {
-        const url = new URL(proxyStr);
-        host = url.hostname;
-        port = url.port || 1080;
-      } else {
-        const parts = proxyStr.split(":");
-        host = parts[0];
-        port = parts[1] || 1080;
-      }
-      if (!host || !port) return resolve(false);
-
-      const socket = new net.Socket();
-      socket.setTimeout(timeout);
-      socket.on("connect", () => { socket.destroy(); resolve(true); });
-      socket.on("timeout", () => { socket.destroy(); resolve(false); });
-      socket.on("error", () => { socket.destroy(); resolve(false); });
-      socket.connect(port, host);
-    } catch (e) {
-      resolve(false); 
-    }
-  });
-}
-
-// ★★★ 失败冷却记录表 ★★★
-const failureCooldown = new Map();
-const COOLDOWN_MS = 30 * 1000; // 失败后冷却 30 秒
-
 // ==========================================
-// 获取连接（完整替换版）
+// 获取连接
 // ==========================================
 async function getConnection(identifier, callback = null, proxyOverride = null, force = false) {
   const accountService = require("../account");
@@ -417,18 +454,15 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     return null;
   }
 
-  // ★ 池 key 用号码
   const poolKey = account.phoneNumber ? String(account.phoneNumber) : String(account.id);
 
   // 1. 池里有 → 直接返回
   if (connectionPool.has(poolKey)) {
     const sock = connectionPool.get(poolKey);
     if (sock?.user) {
-      // 如果池里有好连接，清空失败记录
       failureCooldown.delete(poolKey);
       return sock;
     }
-    // user 为空 → 释放旧 sock
     await connectionPool.releaseAndClose(poolKey, `[getConnection] user empty`);
   }
 
@@ -436,22 +470,22 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     return null;
   }
 
-  // ★ 2. 检查是否在失败冷却期
+  // 2. 检查是否在失败冷却期
   const blockedUntil = failureCooldown.get(poolKey);
   if (blockedUntil && Date.now() < blockedUntil) {
     const remain = Math.ceil((blockedUntil - Date.now()) / 1000);
     logger.warn(`[${poolKey}] 失败冷却中，剩余 ${remain}s，拒绝本次请求`);
-    return null; 
+    return null;
   }
 
-  // ★ 3. 检查并发限制
+  // 3. 检查并发限制
   const MAX_CONCURRENT_CONNECTIONS = 5;
   if (pendingConnections.size >= MAX_CONCURRENT_CONNECTIONS) {
     logger.warn(`[${poolKey}] 并发连接已达上限 ${MAX_CONCURRENT_CONNECTIONS}，忽略本次请求`);
-    return null; 
+    return null;
   }
 
-  // ★ 4. 检查是否正在连接中
+  // 4. 检查是否正在连接中
   if (pendingConnections.has(poolKey)) {
     logger.info(`[${poolKey}] 连接正在进行中，忽略本次请求`);
     return null;
@@ -467,15 +501,14 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     account.proxy = proxyOverride;
   }
 
-  // ★ 6. 前置代理探活检测（防止底层底层爆栈）
+  // 6. 前置代理探活检测
   if (account.proxy) {
     try {
       const isProxyAlive = await checkProxyAlive(account.proxy);
       if (!isProxyAlive) {
         logger.warn(`[${poolKey}] 代理不通，拒绝建立连接: ${account.proxy}`);
-        // 代理不通，直接记入冷却池，30秒内不许试
         failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
-        return null; 
+        return null;
       }
     } catch (e) {
       logger.error(`[${poolKey}] 代理检测异常:`, e);
@@ -491,17 +524,14 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     const conn = await connectionPool.acquire(poolKey, async () => {
       const result = await createConnection(account, callback);
       if (result?.status === "connected") {
-        // ★ 成功，清空冷却记录
         failureCooldown.delete(poolKey);
         return result.sock;
       }
-      // ★ 连接失败，记入冷却
       failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
       throw new Error(result?.error || "连接失败");
     });
     return conn;
   } catch (error) {
-    // ★ 发生异常，也记入冷却
     failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
     throw error;
   } finally {
@@ -549,24 +579,15 @@ function getAllConnections() {
   return connectionPool.connections;
 }
 
-// ==========================================
-// 检查是否登录中（供 Online 使用）
-// ==========================================
 function isConnecting(identifier) {
   return pendingConnections.has(String(identifier));
 }
 
-// ==========================================
-// 空闲清理
-// ==========================================
 async function intervalStopIdelConnection() {
   const idleCount = connectionPool.evictIdle();
   return idleCount;
 }
 
-// ==========================================
-// 重启通知
-// ==========================================
 async function sendRestartNotification() {
   try {
     await nats.publishMessage("system.restart", {
@@ -580,9 +601,6 @@ async function sendRestartNotification() {
   }
 }
 
-// ==========================================
-// 导出
-// ==========================================
 module.exports = {
   createConnection,
   getConnection,
