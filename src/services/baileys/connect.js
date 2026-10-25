@@ -178,16 +178,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       generateHighQualityLinkPreview: false,
       browser: ["Ubuntu", "Chrome", "20.0.04"],
       getMessage: async (key) => {
-        try {
-          const stored = await redisStorage.getMessageById(key.id);
-          if (stored?.message) {
-            return typeof stored.message === "string" ? JSON.parse(stored.message) : stored.message;
-          }
-          return proto.Message.create({ conversation: "" });
-        } catch (error) {
-          baileysLogger.error(`[${accountId}] getMessage 失败:`, error);
-          return proto.Message.create({ conversation: "" });
-        }
+        return proto.Message.create({ conversation: "" });
       },
     });
 
@@ -262,16 +253,22 @@ async function createConnection(account, onConnected = null, usePairCode = false
         const upsert = events["messages.upsert"];
         if (upsert.type === "notify" || upsert.type === "append") {
           sock.lastActiveTime = new Date();
+
           for (const msg of upsert.messages || []) {
             const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+
+            // ★ 优化 1：遇到多媒体占位符，直接跳过，绝对不去主动拉取大文件
             if (text === "requestPlaceholder" && !upsert.requestId) {
-              await sock.requestPlaceholderResend(msg.key);
+              logger.info(`[${account.phoneNumber}] 收到多媒体占位符，已忽略拉取`);
               continue;
             }
+
+            // ★ 优化 2：按需同步历史记录非常吃内存，直接砍掉
             if (text === "onDemandHistSync") {
-              await sock.fetchMessageHistory(50, msg.key, msg.messageTimestamp);
               continue;
             }
+
+            // 正常消息交给 handleIncomingMessage
             await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }

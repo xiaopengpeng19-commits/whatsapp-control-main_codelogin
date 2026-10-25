@@ -30,27 +30,12 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
       participant: msg.key.participant,
       messageType,
       content,
-      rawMessage: msg.message,
+      rawMessage: null,
       readStatus: "unread",
     };
 
     await nats.publishMessage("msgs", messageData);
-    await redisStorage.saveMessage({
-      accountId,
-      accountPhone,
-      messageId: msg.key.id,
-      remoteJid: chatId,
-      fromMe: false,
-      timestamp: msg.messageTimestamp,
-      pushName: msg.pushName,
-      participant: msg.key.participant,
-      content,
-      MessageType: messageType,
-      originalMessageType: messageType,
-      message: msg.message,
-      readStatus: "unread",
-    });
-
+    
     if (chatId && !isJidNewsletter(chatId)) {
       if (!pendingReads.has(chatId)) {
         pendingReads.set(chatId, { keys: [], timer: null });
@@ -66,9 +51,7 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
           try {
             await sock.readMessages(keys);
             logger.info(`[${accountPhone}] 批量已读 ${keys.length} 条消息, 会话: ${chatId}`);
-            for (const key of keys) {
-              await redisStorage.updateMessageStatus(key.id, "read");
-            }
+            
           } catch (error) {
             logger.error(`[${accountPhone}] 批量已读失败: ${error.message || String(error)}`);
           }
@@ -117,7 +100,7 @@ async function handleMessageStatusUpdate(updates, accountId, accountPhone) {
       };
 
       await nats.publishMessage("msgs", receiptData);
-      await redisStorage.updateMessageStatus(key.id, receipt);
+
     } catch (error) {
       logger.error(`[${accountId}] 处理消息状态更新失败:`, error);
     }

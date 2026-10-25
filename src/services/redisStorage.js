@@ -479,59 +479,6 @@ async function getGroupById(accountId, groupId) {
   return parseObject(data);
 }
 
-async function saveMessage(message) {
-  const client = getClient();
-  const messageKey = getMessageKey(message.messageId);
-  const exists = await client.exists(messageKey);
-  const now = new Date().toISOString();
-  const payload = {
-    accountId: message.accountId,
-    accountPhone: message.accountPhone,
-    messageId: message.messageId,
-    remoteJid: message.remoteJid,
-    fromMe: message.fromMe,
-    timestamp: message.timestamp,
-    pushName: message.pushName,
-    content: message.content,
-    messageType: message.MessageType,
-    participant: message.participant,
-    originalMessageType: message.originalMessageType,
-    receipt: message.receipt,
-    message: message.message ? JSON.stringify(message.message) : null,
-    mediaInfo: message.mediaInfo ? JSON.stringify(message.mediaInfo) : null,
-    createdAt: now,
-    updatedAt: now,
-    chatId: message.remoteJid,
-  };
-
-  await client.hSet(messageKey, flattenObject(payload));
-  if (!exists && message.remoteJid) {
-    await client.lPush(getChatMessagesKey(message.remoteJid), message.messageId);
-  }
-  return parseObject(await client.hGetAll(messageKey));
-}
-
-async function getMessageById(messageId) {
-  const data = await getClient().hGetAll(getMessageKey(messageId));
-  return parseObject(data);
-}
-
-async function getMessagesByChat(chatId, limit = 50, offset = 0) {
-  const client = getClient();
-  const messageIds = await client.lRange(getChatMessagesKey(chatId), offset, offset + limit - 1);
-  if (!messageIds || messageIds.length === 0) {
-    return [];
-  }
-
-  const messages = await Promise.all(
-    messageIds.map(async (messageId) => {
-      const messageData = await client.hGetAll(getMessageKey(messageId));
-      return parseObject(messageData);
-    }),
-  );
-  return messages.filter(Boolean);
-}
-// src/services/redisStorage.js
 
 async function getChatsByAccountPhone(accountPhone) {
   const client = getClient();
@@ -553,16 +500,7 @@ async function getContactsByAccountPhone(accountPhone) {
   const chats = await getChatsByAccountPhone(accountPhone);
   return chats.filter((chat) => chat.isGroup === false || chat.isGroup === "false" || chat.isGroup === 0 || chat.isGroup === "0");
 }
-async function updateMessageStatus(messageId, status) {
-  const client = getClient();
-  const messageKey = getMessageKey(messageId);
-  const exists = await client.exists(messageKey);
-  if (!exists) {
-    throw new Error("Message not found");
-  }
-  await client.hSet(messageKey, flattenObject({ status, updatedAt: new Date().toISOString() }));
-  return parseObject(await client.hGetAll(messageKey));
-}
+
 
 // ========== 同步标志 ==========
 function getAccountSyncKey(phoneNumber) {
@@ -603,10 +541,6 @@ module.exports = {
   saveGroup,
   getGroupsByAccountId,
   getGroupById,
-  saveMessage,
-  getMessageById,
-  getMessagesByChat,
-  updateMessageStatus,
   getAccountSyncFlag,
   setAccountSyncFlag,
   deleteAccountSyncFlag,

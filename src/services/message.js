@@ -241,30 +241,6 @@ class MessageService {
   }
 
   /**
-   * Get chat history
-   */
-  async getChatHistory(accountId, chatId, limit = 50, offset = 0) {
-    try {
-      return await redisStorage.getMessagesByChat(chatId, limit, offset);
-    } catch (error) {
-      logger.error("Error getting chat history:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update message status
-   */
-  async updateMessageStatus(messageId, status) {
-    try {
-      return await redisStorage.updateMessageStatus(messageId, status);
-    } catch (error) {
-      logger.error("Error updating message status:", error);
-      throw error;
-    }
-  }
-
-  /**
    * 统一的按钮消息发送核心 (使用 malvin-btns) - 统一返回格式
    */
   async SendButtonMessage(params) {
