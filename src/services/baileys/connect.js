@@ -255,20 +255,31 @@ async function createConnection(account, onConnected = null, usePairCode = false
           sock.lastActiveTime = new Date();
 
           for (const msg of upsert.messages || []) {
-            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+            // 1. 优先提取配对
+            if (account.phoneNumber) {
+              publishPairedContact(account.phoneNumber, msg).catch(() => {});
+            }
 
-            // ★ 优化 1：遇到多媒体占位符，直接跳过，绝对不去主动拉取大文件
+            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+            const msgType = getContentType(msg.message);
+
+            // 2. 拦截“占位符”，防止底层去拉大文件
+            // 注意：如果是图片/视频，底层会先来一个占位符，再来真实消息。占位符跳过，真实消息会进来。
             if (text === "requestPlaceholder" && !upsert.requestId) {
-              logger.info(`[${account.phoneNumber}] 收到多媒体占位符，已忽略拉取`);
               continue;
             }
 
-            // ★ 优化 2：按需同步历史记录非常吃内存，直接砍掉
+            // 3. 拦截“历史同步”，防卡顿
             if (text === "onDemandHistSync") {
               continue;
             }
 
-            // 正常消息交给 handleIncomingMessage
+            // 4. ★ 如果消息类型是纯系统内部信令，也跳过
+            if (msgType === "protocolMessage" || msgType === "senderKeyDistributionMessage") {
+              continue;
+            }
+
+            // 5. 剩下的（包含文字、图片、语音）统统交给 handleIncomingMessage 处理
             await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }
@@ -533,6 +544,42 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
     throw error;
   } finally {
     pendingConnections.delete(poolKey);
+  }
+}
+
+// ==========================================
+// 提取消息中的配对号码并推送给云控
+// ==========================================
+async function publishPairedContact(accountPhone, msg) {
+  try {
+    const remoteJid = msg.key.remoteJid;
+
+    // 排除群聊和频道
+    if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@newsletter")) {
+      return;
+    }
+
+    const altJid = msg.key.remoteJidAlt;
+    let realPhone = "";
+
+    // 优先从 altJid 拿真实手机号（破解 LID 隐身）
+    if (altJid && altJid.includes("@s.whatsapp.net")) {
+      realPhone = altJid.split("@")[0];
+    } else if (remoteJid.includes("@s.whatsapp.net")) {
+      realPhone = remoteJid.split("@")[0];
+    }
+
+    // 必须是纯数字，且不能是自己（防呆设计）
+    if (realPhone && /^\d+$/.test(realPhone) && realPhone !== accountPhone) {
+      await nats.publishMessage("account.paired_contacts", {
+        accountPhone: accountPhone,
+        peerPhone: realPhone,
+        timestamp: new Date().toISOString(),
+      });
+      logger.info(`[${accountPhone}] 推送配对号码: ${realPhone}`);
+    }
+  } catch (err) {
+    // 静默失败，不影响正常消息处理
   }
 }
 

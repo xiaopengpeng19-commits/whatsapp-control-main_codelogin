@@ -16,7 +16,16 @@ async function handleIncomingMessage(sock, msg, accountId, accountPhone) {
 
     if (msg.key.fromMe) return;
 
-    const content = extractMessageContent(msg.message);
+    // 1. 尝试提取文字内容
+    let content = extractMessageContent(msg.message);
+    
+    // ★ 2. 如果内容是空的（说明是图片、语音、视频、贴纸等纯媒体）
+    if (!content || content.trim() === "") {
+      if (["imageMessage", "videoMessage", "audioMessage", "stickerMessage", "documentMessage"].includes(messageType)) {
+        // 强行给云控生成一段提示文本
+        content = `[收到一条 ${messageType.replace('Message', '')} 媒体消息]`;
+      }
+    }
 
     const messageData = {
       accountId,
