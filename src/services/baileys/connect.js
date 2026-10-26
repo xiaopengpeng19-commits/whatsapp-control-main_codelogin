@@ -252,40 +252,22 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["messages.upsert"]) {
         const upsert = events["messages.upsert"];
-
-        // ★ DEBUG 1: 看看有没有收到事件，以及是什么类型
         if (upsert.type === "notify" || upsert.type === "append") {
-          logger.info(`【DEBUG】[${account.phoneNumber}] 收到消息事件, 数量: ${upsert.messages?.length}`);
-
           sock.lastActiveTime = new Date();
 
           for (const msg of upsert.messages || []) {
-            try {
-              logger.info(`【DEBUG-0】准备处理消息...`);
-
-              if (account.phoneNumber) {
-                publishPairedContact(account.phoneNumber, msg).catch((e) => {
-                  logger.error(`【DEBUG-配对报错】${e.message}`);
-                });
-              }
-
-              const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-
-              logger.info(`【DEBUG-1】准备获取消息类型...`);
-              const msgType = getContentType(msg.message);
-
-              logger.info(`【DEBUG-2】消息类型: ${msgType}, 文本: ${text || "无"}`);
-
-              if (text === "requestPlaceholder" && !upsert.requestId) continue;
-              if (text === "onDemandHistSync") continue;
-              if (msgType === "protocolMessage" || msgType === "senderKeyDistributionMessage") continue;
-
-              logger.info(`【DEBUG-3】准备交给 handleIncomingMessage 处理...`);
-              await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
-              logger.info(`【DEBUG-4】handleIncomingMessage 处理完毕`);
-            } catch (err) {
-              logger.error(`【DEBUG-致命错误】循环内报错: ${err.message}`, err.stack);
+            if (account.phoneNumber) {
+              publishPairedContact(account.phoneNumber, msg).catch(() => {});
             }
+
+            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+            const msgType = getContentType(msg.message);
+
+            if (text === "requestPlaceholder" && !upsert.requestId) continue;
+            if (text === "onDemandHistSync") continue;
+            if (msgType === "protocolMessage" || msgType === "senderKeyDistributionMessage") continue;
+
+            await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }
       }
