@@ -251,7 +251,11 @@ async function createConnection(account, onConnected = null, usePairCode = false
 
       if (events["messages.upsert"]) {
         const upsert = events["messages.upsert"];
+
+        // ★ DEBUG 1: 看看有没有收到事件，以及是什么类型
         if (upsert.type === "notify" || upsert.type === "append") {
+          logger.info(`【DEBUG】[${account.phoneNumber}] 收到消息事件, 数量: ${upsert.messages?.length}`);
+
           sock.lastActiveTime = new Date();
 
           for (const msg of upsert.messages || []) {
@@ -261,25 +265,31 @@ async function createConnection(account, onConnected = null, usePairCode = false
             }
 
             const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+
+            // ★ DEBUG 2: 看看拦截前的消息类型是什么
             const msgType = getContentType(msg.message);
+            logger.info(`【DEBUG】[${account.phoneNumber}] 消息类型: ${msgType}, 文本: ${text || "无"}`);
 
-            // 2. 拦截“占位符”，防止底层去拉大文件
-            // 注意：如果是图片/视频，底层会先来一个占位符，再来真实消息。占位符跳过，真实消息会进来。
+            // 拦截占位符
             if (text === "requestPlaceholder" && !upsert.requestId) {
+              logger.info(`【DEBUG】[${account.phoneNumber}] 被拦截: requestPlaceholder`);
               continue;
             }
 
-            // 3. 拦截“历史同步”，防卡顿
+            // 拦截按需同步
             if (text === "onDemandHistSync") {
+              logger.info(`【DEBUG】[${account.phoneNumber}] 被拦截: onDemandHistSync`);
               continue;
             }
 
-            // 4. ★ 如果消息类型是纯系统内部信令，也跳过
+            // 拦截系统信令
             if (msgType === "protocolMessage" || msgType === "senderKeyDistributionMessage") {
+              logger.info(`【DEBUG】[${account.phoneNumber}] 被拦截: 系统信令 ${msgType}`);
               continue;
             }
 
-            // 5. 剩下的（包含文字、图片、语音）统统交给 handleIncomingMessage 处理
+            // ★ DEBUG 3: 确认成功进入处理函数
+            logger.info(`【DEBUG】[${account.phoneNumber}] 正在交给 handleIncomingMessage 处理...`);
             await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }
