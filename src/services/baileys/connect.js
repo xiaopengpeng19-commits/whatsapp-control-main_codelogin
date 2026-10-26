@@ -7,6 +7,7 @@ const {
   Browsers,
   makeCacheableSignalKeyStore,
   proto,
+  getContentType,
 } = require("@whiskeysockets/baileys");
 
 const net = require("net");
