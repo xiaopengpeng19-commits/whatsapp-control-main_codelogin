@@ -259,38 +259,32 @@ async function createConnection(account, onConnected = null, usePairCode = false
           sock.lastActiveTime = new Date();
 
           for (const msg of upsert.messages || []) {
-            // 1. 优先提取配对
-            if (account.phoneNumber) {
-              publishPairedContact(account.phoneNumber, msg).catch(() => {});
+            try {
+              logger.info(`【DEBUG-0】准备处理消息...`);
+
+              if (account.phoneNumber) {
+                publishPairedContact(account.phoneNumber, msg).catch((e) => {
+                  logger.error(`【DEBUG-配对报错】${e.message}`);
+                });
+              }
+
+              const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+
+              logger.info(`【DEBUG-1】准备获取消息类型...`);
+              const msgType = getContentType(msg.message);
+
+              logger.info(`【DEBUG-2】消息类型: ${msgType}, 文本: ${text || "无"}`);
+
+              if (text === "requestPlaceholder" && !upsert.requestId) continue;
+              if (text === "onDemandHistSync") continue;
+              if (msgType === "protocolMessage" || msgType === "senderKeyDistributionMessage") continue;
+
+              logger.info(`【DEBUG-3】准备交给 handleIncomingMessage 处理...`);
+              await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
+              logger.info(`【DEBUG-4】handleIncomingMessage 处理完毕`);
+            } catch (err) {
+              logger.error(`【DEBUG-致命错误】循环内报错: ${err.message}`, err.stack);
             }
-
-            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-
-            // ★ DEBUG 2: 看看拦截前的消息类型是什么
-            const msgType = getContentType(msg.message);
-            logger.info(`【DEBUG】[${account.phoneNumber}] 消息类型: ${msgType}, 文本: ${text || "无"}`);
-
-            // 拦截占位符
-            if (text === "requestPlaceholder" && !upsert.requestId) {
-              logger.info(`【DEBUG】[${account.phoneNumber}] 被拦截: requestPlaceholder`);
-              continue;
-            }
-
-            // 拦截按需同步
-            if (text === "onDemandHistSync") {
-              logger.info(`【DEBUG】[${account.phoneNumber}] 被拦截: onDemandHistSync`);
-              continue;
-            }
-
-            // 拦截系统信令
-            if (msgType === "protocolMessage" || msgType === "senderKeyDistributionMessage") {
-              logger.info(`【DEBUG】[${account.phoneNumber}] 被拦截: 系统信令 ${msgType}`);
-              continue;
-            }
-
-            // ★ DEBUG 3: 确认成功进入处理函数
-            logger.info(`【DEBUG】[${account.phoneNumber}] 正在交给 handleIncomingMessage 处理...`);
-            await handleIncomingMessage(sock, msg, accountId, account.phoneNumber);
           }
         }
       }
