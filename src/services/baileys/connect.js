@@ -502,12 +502,14 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
       const isProxyAlive = await checkProxyAlive(account.proxy);
       if (!isProxyAlive) {
         logger.warn(`[${poolKey}] 代理不通，拒绝建立连接: ${account.proxy}`);
-        failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
+        // ★ 删掉这行：不再把代理不通加入冷却
+        // failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
         return null;
       }
     } catch (e) {
       logger.error(`[${poolKey}] 代理检测异常:`, e);
-      failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
+      // ★ 删掉这行：不再把检测异常加入冷却
+      // failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
       return null;
     }
   }
