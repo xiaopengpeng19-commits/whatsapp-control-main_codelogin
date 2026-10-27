@@ -474,7 +474,7 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
   }
 
   // 3. 检查并发限制
-  const MAX_CONCURRENT_CONNECTIONS = 5;
+  const MAX_CONCURRENT_CONNECTIONS = 20;
   if (pendingConnections.size >= MAX_CONCURRENT_CONNECTIONS) {
     logger.warn(`[${poolKey}] 并发连接已达上限 ${MAX_CONCURRENT_CONNECTIONS}，忽略本次请求`);
     return null;
