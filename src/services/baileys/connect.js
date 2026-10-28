@@ -166,12 +166,14 @@ async function createConnection(account, onConnected = null, usePairCode = false
       maxReconnectAttempts: 0,
       agent: proxyAgent,
       fetchAgent: proxyAgent,
-      shouldSyncHistoryMessage: (msg) => {
-        if (msg && msg.syncType === 2) return false; // 拒绝全量历史
-        return true;
-      },
+      // shouldSyncHistoryMessage: (msg) => {
+      //   if (msg && msg.syncType === 2) return false; // 拒绝全量历史
+      //   return true;
+      // },
+      // syncFullHistory: false,
+      shouldSyncHistoryMessage: true,
+      syncFullHistory: true,
       defaultQueryTimeoutMs: 60000,
-      syncFullHistory: false,
       msgRetryCounterCache: new NodeCache({ stdTTL: 60 * 10, maxKeys: 5000 }), // ★ 限制最大 5000 条
       connectTimeoutMs: 120000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
