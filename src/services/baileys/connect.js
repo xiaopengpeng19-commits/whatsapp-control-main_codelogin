@@ -171,7 +171,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       //   return true;
       // },
       // syncFullHistory: false,
-      shouldSyncHistoryMessage: true,
+      shouldSyncHistoryMessage: () => true, 
       syncFullHistory: true,
       defaultQueryTimeoutMs: 60000,
       msgRetryCounterCache: new NodeCache({ stdTTL: 60 * 10, maxKeys: 5000 }), // ★ 限制最大 5000 条
