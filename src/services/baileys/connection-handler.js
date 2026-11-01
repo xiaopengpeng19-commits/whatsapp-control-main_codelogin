@@ -104,28 +104,36 @@ async function handleConnectionClose(sock, account, lastDisconnect, ctx) {
   if (statusCode === 515) {
     logger.info(`[${account.phoneNumber || accountId}] 配对码登录成功，需要重启连接 (515)`);
     const { createConnection } = require("./connect");
-    createConnection(account, onConnected, false)
-      .then((result) => {
-        if (result?.status === "connected") {
-          if (resolveFunc && typeof resolveFunc === "function") {
-            resolveFunc(result);
+
+    // ★ 增加 3-8 秒随机延迟，伪装真人行为，防风控封号
+    const delay = 3000 + Math.random() * 5000;
+    logger.info(`[${account.phoneNumber || accountId}] ${delay.toFixed(0)}ms 后发起重连...`);
+
+    setTimeout(() => {
+      createConnection(account, onConnected, false)
+        .then((result) => {
+          if (result?.status === "connected") {
+            if (resolveFunc && typeof resolveFunc === "function") {
+              resolveFunc(result);
+            }
+          } else {
+            if (rejectFunc && typeof rejectFunc === "function") {
+              const err = new Error("重启连接失败");
+              err.code = 500;
+              err.type = "RESTART_FAILED";
+              rejectFunc(err);
+            }
           }
-        } else {
+        })
+        .catch((err) => {
           if (rejectFunc && typeof rejectFunc === "function") {
-            const err = new Error("重启连接失败");
-            err.code = 500;
-            err.type = "RESTART_FAILED";
+            err.code = err.code || 500;
+            err.type = err.type || "RESTART_ERROR";
             rejectFunc(err);
           }
-        }
-      })
-      .catch((err) => {
-        if (rejectFunc && typeof rejectFunc === "function") {
-          err.code = err.code || 500;
-          err.type = err.type || "RESTART_ERROR";
-          rejectFunc(err);
-        }
-      });
+        });
+    }, delay);
+
     return;
   }
 

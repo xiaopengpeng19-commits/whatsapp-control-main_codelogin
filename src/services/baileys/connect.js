@@ -179,7 +179,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: false,
-      browser: ["Ubuntu", "Chrome", "20.0.04"],
+      browser: ["Ubuntu", "Chrome", "121.0.6167.140"],
       getMessage: async (key) => {
         return proto.Message.create({ conversation: "" });
       },
