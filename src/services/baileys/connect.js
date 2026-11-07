@@ -6,7 +6,6 @@ const {
   useMultiFileAuthState,
   Browsers,
   makeCacheableSignalKeyStore,
-  proto,
   getContentType,
 } = require("@whiskeysockets/baileys");
 
@@ -149,7 +148,7 @@ async function createConnection(account, onConnected = null, usePairCode = false
       browser: Browsers.ubuntu("Chrome"),
       markOnlineOnConnect: false,
       getMessage: async (key) => {
-        return proto.Message.create({ conversation: "" });
+        return undefined;
       },
     });
 
