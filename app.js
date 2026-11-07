@@ -200,17 +200,6 @@ server.listen(PORT, () => {
 });
 
 console.log("🚀 [63] 注册进程信号处理...");
-// Handle application shutdown to gracefully close connections
-process.on("SIGINT", async () => {
-  console.log("🚀 [64] 收到 SIGINT，正在关闭...");
-  logger.info("Application shutting down...");
-
-  // Close NATS connection
-  await natsConfig.closeConnection();
-
-  process.exit(0);
-});
-console.log("🚀 [65] SIGINT 处理注册完成");
 
 process.on("uncaughtException", (err) => {
   logger.error("================ UNCAUGHT EXCEPTION ================");

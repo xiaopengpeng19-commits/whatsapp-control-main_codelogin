@@ -62,7 +62,7 @@ class MessageController {
           };
 
           // In a real implementation, this would send a WhatsApp message
-          messages.push(message);
+          // messages.push(message);
 
           results.push({
             id: message.id,

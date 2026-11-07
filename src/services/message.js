@@ -153,33 +153,14 @@ class MessageService {
     }
   }
 
-  /**
-   * Send video message - 统一返回格式
-   */
+  // src/services/message.js
   async SendVideoMsg(idorphone, data) {
-    try {
-      const { To, Base64Content, Caption, DeleteForMe } = data;
-      const sock = await getConnection(idorphone);
-      if (!sock) {
-        return { code: 500, message: "cant connect to whatsapp", data: { to: To } };
-      }
-      const media = Buffer.from(Base64Content, "base64");
-      let response = await this.sendMessageWTyping(sock, To, {
-        video: media,
-        caption: Caption,
-        ...(DeleteForMe ? { deleteForMe: DeleteForMe } : {}),
-      });
-      return {
-        code: 200,
-        message: "success",
-        data: {
-          to: To,
-          messageId: response.key.id,
-        },
-      };
-    } catch (error) {
-      return { code: 500, message: error.message, data: { to: To } };
-    }
+    // WhatsApp 协议不支持通过 Baileys 直接发送视频，明确返回不支持
+    return {
+      code: 501,
+      message: "video message is not supported by WhatsApp protocol",
+      data: { to: data?.To || data?.to || "" },
+    };
   }
 
   /**

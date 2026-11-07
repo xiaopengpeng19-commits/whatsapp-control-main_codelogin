@@ -762,7 +762,7 @@ class AccountService {
     try {
       const { Phones } = data;
       const sock = await getConnection(idorphone);
-      const contacts = await sock.onWhatsApp(...phones);
+      const contacts = await sock.onWhatsApp(...Phones);
       let results = contacts.map((contact) => {
         return contact.jid.split("@")[0];
       });
