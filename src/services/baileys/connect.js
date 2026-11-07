@@ -12,7 +12,7 @@ const {
 
 const net = require("net");
 const { NodeCache } = require("@cacheable/node-cache"); // ★ 修复：引入 NodeCache
-const { LRUCache } = require("lru-cache"); // ★ 修复：引入 LRU 缓存限制密钥库
+
 
 const { conn } = require("../../utils/logger");
 const redisStorage = require("../redisStorage");
@@ -124,43 +124,11 @@ async function createConnection(account, onConnected = null, usePairCode = false
       baileysLogger.trace = () => {};
     }
 
-    // ★ 终极防漏：用 LRU 限制密钥库，最多 1 万条，存活 24 小时，绝不撑爆内存
-    const lruKeys = new LRUCache({ max: 10000, ttl: 1000 * 60 * 60 * 24 });
-    const originalKeys = state.keys;
-    const wrappedKeys = {
-      get: async (type, ids) => {
-        const data = {};
-        await Promise.all(
-          ids.map(async (id) => {
-            const key = `${type}-${id}`;
-            let value = lruKeys.get(key);
-            if (value === undefined) {
-              const originalData = await originalKeys.get(type, [id]);
-              if (originalData[id]) {
-                value = originalData[id];
-                lruKeys.set(key, value);
-              }
-            }
-            if (value) data[id] = value;
-          }),
-        );
-        return data;
-      },
-      set: async (data) => {
-        await originalKeys.set(data);
-        for (const type in data) {
-          for (const id in data[type]) {
-            lruKeys.set(`${type}-${id}`, data[type][id]);
-          }
-        }
-      },
-    };
-
     sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: wrappedKeys, // ★ 使用限制后的 keys
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger), 
       },
       reconnect: false,
       maxReconnectAttempts: 0,
@@ -170,16 +138,16 @@ async function createConnection(account, onConnected = null, usePairCode = false
       //   if (msg && msg.syncType === 2) return false; // 拒绝全量历史
       //   return true;
       // },
-      // syncFullHistory: false,
+      syncFullHistory: false,
       shouldSyncHistoryMessage: () => true, 
-      syncFullHistory: true,
       defaultQueryTimeoutMs: 60000,
       msgRetryCounterCache: new NodeCache({ stdTTL: 60 * 10, maxKeys: 5000 }), // ★ 限制最大 5000 条
       connectTimeoutMs: 120000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: false,
-      browser: ["Ubuntu", "Chrome", "121.0.6167.140"],
+      browser: Browsers.ubuntu("Chrome"),
+      markOnlineOnConnect: false,
       getMessage: async (key) => {
         return proto.Message.create({ conversation: "" });
       },
