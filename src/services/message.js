@@ -52,10 +52,10 @@ class MessageService {
    */
   async sendMessageWTyping(sock, jid, msg, DeleteForMe = false) {
     const targetJid = normalizeJid(jid);
-    await sock.presenceSubscribe(targetJid);
-    await delay(500);
-    await sock.sendPresenceUpdate("composing", targetJid);
-    await delay(500);
+    // await sock.presenceSubscribe(targetJid);
+    // await delay(500);
+    // await sock.sendPresenceUpdate("composing", targetJid);
+    // await delay(500);
     let response = await sock.sendMessage(targetJid, msg);
     logger.info("response:", response);
     if (DeleteForMe) {
@@ -126,10 +126,10 @@ class MessageService {
       }
 
       const targetJid = normalizeJid(To);
-      await sock.presenceSubscribe(targetJid);
-      await delay(500);
-      await sock.sendPresenceUpdate("composing", targetJid);
-      await delay(500);
+      // await sock.presenceSubscribe(targetJid);
+      // await delay(500);
+      // await sock.sendPresenceUpdate("composing", targetJid);
+      // await delay(500);
 
       const response = await sock.sendMessage(targetJid, {
         image: image,
