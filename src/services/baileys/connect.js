@@ -10,8 +10,6 @@ const {
 } = require("@whiskeysockets/baileys");
 
 const net = require("net");
-const { NodeCache } = require("@cacheable/node-cache"); // ★ 修复：引入 NodeCache
-
 
 const { conn } = require("../../utils/logger");
 const redisStorage = require("../redisStorage");
@@ -127,29 +125,24 @@ async function createConnection(account, onConnected = null, usePairCode = false
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger), 
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
       reconnect: false,
       maxReconnectAttempts: 0,
       agent: proxyAgent,
       fetchAgent: proxyAgent,
-      // shouldSyncHistoryMessage: (msg) => {
-      //   if (msg && msg.syncType === 2) return false; // 拒绝全量历史
-      //   return true;
-      // },
       syncFullHistory: false,
-      shouldSyncHistoryMessage: () => true, 
+      shouldSyncHistoryMessage: () => true,
       defaultQueryTimeoutMs: 60000,
-      msgRetryCounterCache: new NodeCache({ stdTTL: 60 * 10, maxKeys: 5000 }), // ★ 限制最大 5000 条
+      msgRetryCounterCache: msgRetryCounterCache,
       connectTimeoutMs: 120000,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       retryRequestDelayMs: 1000,
       generateHighQualityLinkPreview: false,
       browser: Browsers.ubuntu("Chrome"),
       markOnlineOnConnect: false,
-      getMessage: async (key) => {
-        return undefined;
-      },
+      // 无消息缓存，返回 undefined 让 Baileys 跳过解密失败重试
+      getMessage: async () => undefined,
     });
 
     sock.account_status = LOGIN_STATUS.CONNECTING;
@@ -471,14 +464,10 @@ async function getConnection(identifier, callback = null, proxyOverride = null, 
       const isProxyAlive = await checkProxyAlive(account.proxy);
       if (!isProxyAlive) {
         logger.warn(`[${poolKey}] 代理不通，拒绝建立连接: ${account.proxy}`);
-        // ★ 删掉这行：不再把代理不通加入冷却
-        // failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
         return null;
       }
     } catch (e) {
       logger.error(`[${poolKey}] 代理检测异常:`, e);
-      // ★ 删掉这行：不再把检测异常加入冷却
-      // failureCooldown.set(poolKey, Date.now() + COOLDOWN_MS);
       return null;
     }
   }
@@ -512,7 +501,6 @@ async function publishPairedContact(accountPhone, msg) {
   try {
     const remoteJid = msg.key.remoteJid;
 
-    // 排除群聊和频道
     if (!remoteJid || remoteJid.includes("@g.us") || remoteJid.includes("@newsletter")) {
       return;
     }
@@ -520,14 +508,12 @@ async function publishPairedContact(accountPhone, msg) {
     const altJid = msg.key.remoteJidAlt;
     let realPhone = "";
 
-    // 优先从 altJid 拿真实手机号（破解 LID 隐身）
     if (altJid && altJid.includes("@s.whatsapp.net")) {
       realPhone = altJid.split("@")[0];
     } else if (remoteJid.includes("@s.whatsapp.net")) {
       realPhone = remoteJid.split("@")[0];
     }
 
-    // 必须是纯数字，且不能是自己（防呆设计）
     if (realPhone && /^\d+$/.test(realPhone) && realPhone !== accountPhone) {
       await nats.publishMessage("account.paired_contacts", {
         accountPhone: accountPhone,
