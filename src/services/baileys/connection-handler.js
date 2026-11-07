@@ -100,15 +100,24 @@ async function handleConnectionClose(sock, account, lastDisconnect, ctx) {
     return;
   }
 
-  // 515 重启
+  // ========== 515 重启（扫码/配对成功后的必经流程） ==========
   if (statusCode === 515) {
-    logger.info(`[${account.phoneNumber || accountId}] 配对码登录成功，需要重启连接 (515)`);
+    logger.info(`[${account.phoneNumber || accountId}] 收到 515 重启请求，等待凭证落盘后重连`);
+
+    // ★ 先释放旧 sock，避免它继续触发 creds.update 干扰写入
+    try {
+      await releaseSock(sock, `[${account.phoneNumber || accountId}] 515 重启`);
+    } catch (e) {}
+
+    // ★ 等待凭证写入稳定（useMultiFileAuthState 异步写，15s 是社区验证的兜底值）
+    await new Promise((resolve) => setTimeout(resolve, 15000));
+
+    logger.info(`[${account.phoneNumber || accountId}] 凭证落盘等待完成，开始重连`);
+
     const { createConnection } = require("./connect");
 
-    // ★ 增加 3-8 秒随机延迟，伪装真人行为，防风控封号
-    const delay = 3000 + Math.random() * 5000;
-    logger.info(`[${account.phoneNumber || accountId}] ${delay.toFixed(0)}ms 后发起重连...`);
-
+    // 重连前再加一点随机延迟，避免和服务端要求重启的时机贴太近
+    const delay = 2000 + Math.random() * 3000;
     setTimeout(() => {
       createConnection(account, onConnected, false)
         .then((result) => {
@@ -118,7 +127,7 @@ async function handleConnectionClose(sock, account, lastDisconnect, ctx) {
             }
           } else {
             if (rejectFunc && typeof rejectFunc === "function") {
-              const err = new Error("重启连接失败");
+              const err = new Error("515 重启连接失败");
               err.code = 500;
               err.type = "RESTART_FAILED";
               rejectFunc(err);
